@@ -10,14 +10,22 @@ Prerequisites: Docker Desktop running, `uv` ≥ 0.13, Python 3.13, Node 22.
 
 ```bash
 cp .env.example .env                 # set GEMINI_API_KEY (empty => offline fake model)
-docker compose up -d postgres
 uv sync --all-extras
-uv run python -m backend.migrate     # app schema + job-queue schema (idempotent)
+./scripts/dev.sh                     # http://localhost:5173 — Ctrl+C stops everything
+```
 
-# three terminals
+`scripts/dev.sh` starts Postgres in Docker, runs migrations (idempotent), then runs the API (auto-reload), the worker and the web dev server with `api` / `worker` / `web` log prefixes. If any of them exits, the others stop too. It refuses to start if port 8000 or 5173 is already taken. The first worker start downloads the embedding model (~536 MB).
+
+Model choice and thinking: list the models users may pick in `.env` (`LLM_MODELS=a,b,c`; `LLM_ANSWER_MODEL` is the
+default), plus `LLM_THINKING_LEVELS` / `LLM_THINKING_DEFAULT` and `MAX_QUESTION_CHARS`. Restart the API after editing.
+
+Separately, if you prefer:
+
+```bash
+docker compose up -d postgres && uv run python -m backend.migrate
 uv run uvicorn backend.api.app:app --port 8000
-uv run python -m backend.workers     # first start downloads the embedding model (~536 MB)
-cd frontend/web && npm install && npm run dev   # http://localhost:5173
+uv run python -m backend.workers
+cd frontend/web && npm run dev
 ```
 
 The worker uses the Apple GPU (MPS, bf16) when run natively. Startup fails loudly if a configured Gemini model does not exist or the key is invalid; an overloaded model (HTTP 503) only logs a warning.
