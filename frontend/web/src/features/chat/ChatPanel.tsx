@@ -1,29 +1,30 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Square } from 'lucide-react'
+import { ArrowUp, FileText, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { api, type DocumentOut } from '../../lib/api'
+import { api, type DocumentOut, type SessionOut } from '../../lib/api'
 import { postSse } from '../../lib/sse'
 import { useUi } from '../../stores/ui'
 import { applyEvent, numbered, startAnswer, type LiveAnswer } from './answerReducer'
 import { AssistantMessage } from './AssistantMessage'
+import { starterQuestions } from './starters'
 
-export function ChatPanel({ doc }: { doc: DocumentOut }) {
+export function ChatPanel({ session, doc }: { session: SessionOut; doc: DocumentOut }) {
   const qc = useQueryClient()
-  const history = useQuery({ queryKey: ['messages', doc.id], queryFn: () => api.messages(doc.id), enabled: doc.status === 'ready' })
+  const ready = doc.status === 'ready'
+  const history = useQuery({ queryKey: ['messages', session.id], queryFn: () => api.messages(session.id), enabled: ready })
+  const outline = useQuery({ queryKey: ['outline', doc.id], queryFn: () => api.outline(doc.id), enabled: ready, staleTime: Infinity })
   const [live, setLive] = useState<LiveAnswer | null>(null)
   const [draft, setDraft] = useState('')
   const abort = useRef<AbortController | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const activate = useUi((s) => s.activate)
-
-  const ready = doc.status === 'ready'
   const busy = live?.status === 'streaming'
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' }) // newer Chromium returns a Promise: never return it as cleanup
   }, [history.data, live])
-  useEffect(() => () => abort.current?.abort(), [doc.id])
+  useEffect(() => () => abort.current?.abort(), [session.id])
 
   async function ask(question: string) {
     const q = question.trim()
@@ -32,19 +33,21 @@ export function ChatPanel({ doc }: { doc: DocumentOut }) {
     setLive(startAnswer(q))
     abort.current = new AbortController()
     try {
-      await postSse(`/api/documents/${doc.id}/messages`, { question: q }, (e) => setLive((a) => (a ? applyEvent(a, e) : a)), abort.current.signal)
+      await postSse(`/api/sessions/${session.id}/messages`, { question: q }, (e) => setLive((a) => (a ? applyEvent(a, e) : a)), abort.current.signal)
     } catch (err) {
       if ((err as Error).name !== 'AbortError') setLive((a) => a && { ...a, status: 'error', error: 'Connection lost. Try again.' })
     }
-    await qc.invalidateQueries({ queryKey: ['messages', doc.id] })
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['messages', session.id] }),
+      qc.invalidateQueries({ queryKey: ['sessions'] }), // title + recency
+    ])
     setLive((a) => (a && a.status !== 'streaming' && a.status !== 'error' ? null : a))
   }
 
   // Keyboard: "/" focuses the composer, "[" / "]" step through the latest answer's citations.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement
-      if (t.closest('input, textarea, [contenteditable]')) return
+      if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return
       if (e.key === '/') {
         e.preventDefault()
         input.current?.focus()
@@ -64,31 +67,51 @@ export function ChatPanel({ doc }: { doc: DocumentOut }) {
   }, [history.data, activate])
 
   const messages = history.data ?? []
-  // Once history holds the streamed answer (same id), stop rendering the live copy.
   const showLive = live && !(live.id && messages.some((m) => m.id === live.id))
+  const empty = ready && history.isSuccess && messages.length === 0 && !live
+  const starters = starterQuestions(outline.data ?? [])
 
   return (
-    <section className="flex h-full min-w-0 flex-col bg-bg" aria-label="Chat">
+    <section className="flex h-full min-w-0 flex-col bg-bg" aria-label="Conversation">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[68ch] flex-col gap-6 px-5 py-6">
-          {ready && messages.length === 0 && !live && (
-            <div className="pt-[18vh] text-muted">
-              <p className="font-serif text-[24px] leading-8 text-fg">Ask anything about {doc.title}.</p>
-              <p className="mt-2">Every answer links to the exact place in the document it came from.</p>
+        <div className="mx-auto flex max-w-[70ch] flex-col gap-7 px-6 pb-8 pt-6">
+          {empty && (
+            <div className="pt-[12vh]">
+              <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-[13px] text-muted">
+                <FileText size={14} className="text-accent" />
+                {doc.title}, {doc.page_count} {doc.page_count === 1 ? 'page' : 'pages'}
+              </span>
+              <p className="mt-5 font-serif text-[28px] leading-[36px] tracking-[-0.01em] text-fg">What would you like to know?</p>
+              <p className="mt-2 text-muted">Answers quote the document and link to the exact passage.</p>
+              {starters.length > 0 && (
+                <div className="mt-8">
+                  <p className="text-[13px] text-muted">Or start with a section</p>
+                  <ul className="mt-2 divide-y divide-line border-y border-line">
+                    {starters.map((s) => (
+                      <li key={s.label}>
+                        <button
+                          onClick={() => void ask(s.question)}
+                          aria-label={s.question}
+                          className="group flex w-full items-baseline gap-3 px-1 py-2.5 text-left hover:bg-surface/50"
+                        >
+                          <span className="min-w-0 flex-1 truncate font-serif text-[16px] text-fg group-hover:text-accent">{s.label}</span>
+                          <span className="shrink-0 text-[12px] tabular-nums text-muted">p. {s.page}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
           {messages.map((m) =>
             m.role === 'user' ? (
-              <p key={m.id} className="self-start rounded-lg bg-surface px-3 py-2 text-fg">
-                {m.content}
-              </p>
+              <UserBubble key={m.id} text={m.content} />
             ) : (
               <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} />
             ),
           )}
-          {showLive && live && (
-            <p className="self-start rounded-lg bg-surface px-3 py-2 text-fg">{live.question}</p>
-          )}
+          {showLive && live && <UserBubble text={live.question} />}
           {showLive && live && (
             <AssistantMessage
               id={live.id ?? 'live'}
@@ -96,25 +119,27 @@ export function ChatPanel({ doc }: { doc: DocumentOut }) {
               status={live.status}
               closest={live.closest}
               error={live.error}
+              route={live.route}
+              blocks={live.blocks}
             />
           )}
           <div ref={end} />
         </div>
       </div>
       <form
-        className="mx-auto w-full max-w-[68ch] px-4 pb-4"
+        className="mx-auto w-full max-w-[70ch] px-4 pb-4"
         onSubmit={(e) => {
           e.preventDefault()
           void ask(draft)
         }}
       >
-        <div className="flex items-end gap-2 rounded-xl border border-line bg-surface p-2 focus-within:border-accent">
+        <div className="rounded-2xl border border-line bg-surface px-3 pb-2.5 pt-3 transition-colors">
           <textarea
             ref={input}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 void ask(draft)
               }
@@ -124,24 +149,38 @@ export function ChatPanel({ doc }: { doc: DocumentOut }) {
             disabled={!ready}
             placeholder={ready ? 'Ask about this document' : 'Available once the document is ready'}
             aria-label="Ask about this document"
-            className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-fg outline-none [field-sizing:content] placeholder:text-muted disabled:cursor-not-allowed"
+            className="block max-h-48 min-h-7 w-full resize-none bg-transparent px-1 text-[15px] leading-6 text-fg outline-none [field-sizing:content] placeholder:text-muted disabled:cursor-not-allowed"
           />
-          {busy ? (
-            <button type="button" onClick={() => abort.current?.abort()} aria-label="Stop" className="grid size-9 place-items-center rounded-lg bg-line text-fg">
-              <Square size={14} fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!ready || !draft.trim()}
-              aria-label="Send"
-              className="grid size-9 place-items-center rounded-lg bg-accent text-on-accent hover:bg-accent-strong disabled:opacity-40"
-            >
-              <ArrowUp size={18} />
-            </button>
-          )}
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-1.5 truncate pl-1 text-[12px] text-muted">
+              <FileText size={13} className="shrink-0" />
+              <span className="truncate">{doc.title}</span>
+            </span>
+            {busy ? (
+              <button type="button" onClick={() => abort.current?.abort()} aria-label="Stop answering" className="grid size-8 shrink-0 place-items-center rounded-lg bg-line text-fg hover:bg-muted/30">
+                <Square size={12} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!ready || !draft.trim()}
+                aria-label="Send"
+                className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent hover:bg-accent-strong disabled:bg-line disabled:text-muted"
+              >
+                <ArrowUp size={17} strokeWidth={2.25} />
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </section>
+  )
+}
+
+function UserBubble({ text }: { text: string }) {
+  return (
+    <div className="flex justify-end">
+      <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-surface px-4 py-2.5 text-[15px] leading-6 text-fg">{text}</p>
+    </div>
   )
 }

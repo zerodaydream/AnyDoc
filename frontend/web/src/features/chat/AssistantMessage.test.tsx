@@ -28,6 +28,15 @@ describe('AssistantMessage', () => {
     expect(screen.getByText(/third quarter was \$4\.2M/)).toBeInTheDocument()
   })
 
+  it('keeps the last word and its citation pills together', () => {
+    const { container } = render(
+      <AssistantMessage id="m5" status="answered" segments={[{ text: 'Adam was used to train it.', citations: [cite, cite] }]} />,
+    )
+    const run = container.querySelector('.whitespace-nowrap')!
+    expect(run.textContent).toBe('it.12')
+    expect(container.textContent).toContain('Adam was used to train it.12')
+  })
+
   it('shows retracted text as removed, never with a citation', () => {
     render(
       <AssistantMessage id="m2" status="partial" segments={[{ text: 'Made-up claim.', citations: [], retracted: 'no_valid_evidence' }]} />,

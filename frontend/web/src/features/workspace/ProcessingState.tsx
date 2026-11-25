@@ -13,7 +13,7 @@ const STEPS: { label: string; states: string[] }[] = [
 
 export function ProcessingState({ doc }: { doc: DocumentOut }) {
   const qc = useQueryClient()
-  const setUploading = useUi((s) => s.setUploading)
+  const openSession = useUi((s) => s.openSession)
   const refresh = (d: DocumentOut) => qc.setQueryData(['document', d.id], d)
   const cancel = useMutation({ mutationFn: () => api.cancel(doc.id), onSuccess: refresh })
   const retry = useMutation({ mutationFn: () => api.retry(doc.id), onSuccess: refresh })
@@ -29,7 +29,7 @@ export function ProcessingState({ doc }: { doc: DocumentOut }) {
           <button onClick={() => retry.mutate()} className="h-9 rounded-lg bg-accent px-3 text-on-accent hover:bg-accent-strong">
             Try again
           </button>
-          <button onClick={() => setUploading(true)} className="h-9 rounded-lg border border-line px-3 text-fg hover:bg-surface">
+          <button onClick={() => openSession(null)} className="h-9 rounded-lg border border-line px-3 text-fg hover:bg-surface">
             Upload another file
           </button>
         </div>

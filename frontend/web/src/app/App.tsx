@@ -1,72 +1,123 @@
 import { useQuery } from '@tanstack/react-query'
-import { Moon, PanelRightClose, PanelRightOpen, Plus, Sun } from 'lucide-react'
-import { useEffect, useSyncExternalStore } from 'react'
+import { Menu, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { ChatPanel } from '../features/chat/ChatPanel'
-import { UploadZone } from '../features/uploads/UploadZone'
+import { Home } from '../features/home/Home'
+import { Sidebar } from '../features/sessions/Sidebar'
+import { Wordmark } from '../features/sessions/Wordmark'
 import { ProcessingState } from '../features/workspace/ProcessingState'
-import { api, TERMINAL, type DocumentOut } from '../lib/api'
+import { api, TERMINAL, type SessionOut } from '../lib/api'
 import { useUi } from '../stores/ui'
 import { DocumentViewer } from '../viewers/core/DocumentViewer'
 
-const wide = window.matchMedia('(min-width: 768px)')
-const useWide = () => useSyncExternalStore((cb) => (wide.addEventListener('change', cb), () => wide.removeEventListener('change', cb)), () => wide.matches)
-const iconBtn = 'grid size-9 place-items-center rounded-lg text-muted hover:bg-surface hover:text-fg'
+const wideQuery = window.matchMedia('(min-width: 900px)')
+const useWide = () =>
+  useSyncExternalStore(
+    (cb) => {
+      wideQuery.addEventListener('change', cb)
+      return () => wideQuery.removeEventListener('change', cb)
+    },
+    () => wideQuery.matches,
+  )
+const iconBtn = 'grid size-8 place-items-center rounded-md text-muted hover:bg-surface hover:text-fg'
 
 export function App() {
-  const { documentId, uploading, theme, toggleTheme, openDocument, setUploading, mobileTab, setMobileTab } = useUi()
-  const isWide = useWide()
-  const docs = useQuery({ queryKey: ['documents'], queryFn: api.listDocuments })
-  const doc = useQuery({
-    queryKey: ['document', documentId],
-    queryFn: () => api.getDocument(documentId!),
-    enabled: !!documentId,
-    refetchInterval: (q) => (q.state.data && TERMINAL.includes(q.state.data.status) ? false : 1000),
-  })
+  const wide = useWide()
+  const { sessionId, sidebarOpen, toggleSidebar } = useUi()
+  const [drawer, setDrawer] = useState(false)
 
   useEffect(() => {
-    if (!documentId && docs.data?.length) openDocument(docs.data[0].id)
-  }, [documentId, docs.data, openDocument])
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        if (wide) toggleSidebar()
+        else setDrawer((d) => !d)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [wide, toggleSidebar])
 
-  const current = doc.data
-  const showUpload = uploading || (docs.isSuccess && docs.data.length === 0)
+  const main = sessionId ? <SessionView key={sessionId} sessionId={sessionId} wide={wide} /> : <Home />
+
+  if (!wide) {
+    return (
+      <div className="flex h-full flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-2">
+          <button className={iconBtn} onClick={() => setDrawer(true)} aria-label="Show conversations">
+            <Menu size={18} />
+          </button>
+          <Wordmark />
+        </header>
+        <main className="min-h-0 flex-1">{main}</main>
+        {drawer && (
+          <div className="fixed inset-0 z-40 flex" role="dialog" aria-modal="true" aria-label="Conversations">
+            <div className="w-[84vw] max-w-[300px] border-r border-line shadow-2xl">
+              <Sidebar onNavigate={() => setDrawer(false)} />
+            </div>
+            <button className="flex-1 bg-black/50" onClick={() => setDrawer(false)} aria-label="Close conversations" />
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-bg px-3">
-        <span className="mr-2 font-serif text-[20px] tracking-tight text-fg">AnyDoc</span>
-        {!!docs.data?.length && (
-          <select
-            value={showUpload ? '' : (documentId ?? '')}
-            onChange={(e) => openDocument(e.target.value)}
-            aria-label="Open document"
-            className="h-8 max-w-[40vw] truncate rounded-md border border-line bg-surface px-2 text-fg"
-          >
-            {showUpload && <option value="">New document</option>}
-            {docs.data.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.title}
-              </option>
-            ))}
-          </select>
-        )}
-        <button onClick={() => setUploading(true)} className={`${iconBtn} ml-1`} aria-label="Open a new document" title="Open a new document">
-          <Plus size={18} />
-        </button>
-        <div className="ml-auto flex items-center gap-1">
-          <button onClick={toggleTheme} className={iconBtn} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
-            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
+    <div className="flex h-full">
+      <aside
+        className={`shrink-0 overflow-hidden border-line transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+          sidebarOpen ? 'w-[264px] border-r' : 'w-0'
+        }`}
+        aria-hidden={!sidebarOpen}
+        inert={!sidebarOpen}
+      >
+        <div className="h-full w-[264px]">
+          <Sidebar />
         </div>
-      </header>
-      <main className="min-h-0 flex-1">{showUpload ? <UploadZone /> : current ? <Workspace doc={current} wide={isWide} mobileTab={mobileTab} setMobileTab={setMobileTab} /> : null}</main>
+      </aside>
+      <main className="relative min-w-0 flex-1">
+        {!sidebarOpen && (
+          <button
+            className={`${iconBtn} absolute left-2 top-3 z-10 bg-bg`}
+            onClick={() => toggleSidebar(true)}
+            aria-label="Show sidebar"
+            title="Show sidebar (Ctrl+B)"
+          >
+            <PanelLeftOpen size={17} />
+          </button>
+        )}
+        {main}
+      </main>
     </div>
   )
 }
 
-function Workspace({ doc, wide, mobileTab, setMobileTab }: { doc: DocumentOut; wide: boolean; mobileTab: 'chat' | 'document'; setMobileTab: (t: 'chat' | 'document') => void }) {
-  const chat = doc.status === 'ready' ? <ChatPanel doc={doc} /> : <ProcessingState doc={doc} />
-  const viewer = <DocumentViewer key={doc.id} doc={doc} />
+function SessionView({ sessionId, wide }: { sessionId: string; wide: boolean }) {
+  const { openSession, mobileTab, setMobileTab, sidebarOpen } = useUi()
+  const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions })
+  const session = sessions.data?.find((s) => s.id === sessionId)
+  const doc = useQuery({
+    queryKey: ['document', session?.document_id],
+    queryFn: () => api.getDocument(session!.document_id),
+    enabled: !!session,
+    refetchInterval: (q) => (q.state.data && TERMINAL.includes(q.state.data.status) ? false : 1000),
+  })
+
+  useEffect(() => {
+    if (sessions.isSuccess && !session) openSession(null) // deleted or foreign link
+  }, [sessions.isSuccess, session, openSession])
+
+  if (!session || !doc.data) return null
+  const chat = (
+    <div className="flex h-full flex-col">
+      {wide && <ChatHeader session={session} indent={!sidebarOpen} />}
+      <div className="min-h-0 flex-1">
+        {doc.data.status === 'ready' ? <ChatPanel session={session} doc={doc.data} /> : <ProcessingState doc={doc.data} />}
+      </div>
+    </div>
+  )
+  const viewer = <DocumentViewer key={doc.data.id} doc={doc.data} />
 
   if (!wide) {
     return (
@@ -78,9 +129,9 @@ function Workspace({ doc, wide, mobileTab, setMobileTab }: { doc: DocumentOut; w
               role="tab"
               aria-selected={mobileTab === t}
               onClick={() => setMobileTab(t)}
-              className={`h-10 flex-1 capitalize ${mobileTab === t ? 'border-b-2 border-accent text-fg' : 'text-muted'}`}
+              className={`h-10 flex-1 ${mobileTab === t ? 'border-b-2 border-accent text-fg' : 'text-muted'}`}
             >
-              {t}
+              {t === 'chat' ? 'Conversation' : 'Document'}
             </button>
           ))}
         </div>
@@ -93,9 +144,18 @@ function Workspace({ doc, wide, mobileTab, setMobileTab }: { doc: DocumentOut; w
   return <SplitView chat={chat} viewer={viewer} />
 }
 
-function SplitView({ chat, viewer }: { chat: React.ReactNode; viewer: React.ReactNode }) {
+function ChatHeader({ session, indent }: { session: SessionOut; indent: boolean }) {
+  return (
+    <div className={`flex h-14 shrink-0 items-center border-b border-line pr-4 ${indent ? 'pl-12' : 'pl-5'}`}>
+      <h1 className="truncate text-[14px] font-medium text-fg">{session.title ?? 'New conversation'}</h1>
+    </div>
+  )
+}
+
+function SplitView({ chat, viewer }: { chat: ReactNode; viewer: ReactNode }) {
   const layout = useDefaultLayout({ id: 'anydoc.workspace', storage: safeStorage })
   const viewerPanel = usePanelRef()
+  const [collapsed, setCollapsed] = useState(false)
   const toggle = () => {
     const p = viewerPanel.current
     if (!p) return
@@ -115,20 +175,28 @@ function SplitView({ chat, viewer }: { chat: React.ReactNode; viewer: React.Reac
 
   return (
     <Group orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="h-full">
-      <Panel id="chat" defaultSize="40" minSize={320}>
+      <Panel id="chat" defaultSize="42" minSize={360}>
         {chat}
       </Panel>
-      <Separator className="group relative w-px bg-line outline-none data-[separator=hover]:bg-accent data-[separator=active]:bg-accent focus-visible:bg-accent">
-        <span className="absolute inset-y-0 -left-1 -right-1" aria-hidden />
+      <Separator className="group relative w-px bg-line outline-none focus-visible:bg-accent data-[separator=active]:bg-accent data-[separator=hover]:bg-accent/60">
+        <span className="absolute inset-y-0 -left-1.5 -right-1.5" aria-hidden />
         <button
           onClick={toggle}
-          className="absolute left-1/2 top-2 z-10 grid size-7 -translate-x-1/2 place-items-center rounded-md border border-line bg-bg text-muted opacity-0 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
-          aria-label="Toggle document panel (Ctrl+\)"
+          className="absolute left-1/2 top-3.5 z-10 grid size-7 -translate-x-1/2 place-items-center rounded-md border border-line bg-bg text-muted opacity-0 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
+          aria-label={collapsed ? 'Show document (Ctrl+\\)' : 'Hide document (Ctrl+\\)'}
         >
-          {viewerPanel.current?.isCollapsed() ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
+          {collapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
         </button>
       </Separator>
-      <Panel id="viewer" defaultSize="60" minSize={320} collapsible collapsedSize={0} panelRef={viewerPanel}>
+      <Panel
+        id="viewer"
+        defaultSize="58"
+        minSize={360}
+        collapsible
+        collapsedSize={0}
+        panelRef={viewerPanel}
+        onResize={() => setCollapsed(viewerPanel.current?.isCollapsed() ?? false)}
+      >
         {viewer}
       </Panel>
     </Group>

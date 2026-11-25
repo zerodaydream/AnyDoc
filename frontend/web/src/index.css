@@ -97,7 +97,23 @@ body {
 [data-theme='dark'] .ad-hl {
   mix-blend-mode: normal;
 }
-.ad-hl[data-low='true'] {
+.ad-pin {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 600 12px/1 var(--font-sans);
+  mix-blend-mode: normal;
+  z-index: 4;
+}
+.ad-pin[data-low='true'] {
+  background: var(--warn);
+}
+.ad-hl[data-low='true']:not(.ad-pin) {
   border-left-color: var(--warn);
   background: rgb(212 165 74 / 0.22);
 }

@@ -3,25 +3,8 @@ import { useUi } from '../../stores/ui'
 
 const isLow = (c: Citation) => c.flags.includes('low_confidence')
 
+/** Numbered clay pill in the answer text; the same numeral is pinned in the page margin when active. */
 export function CitationMark({ id, n, citation }: { id: string; n: number; citation: Citation }) {
-  const activate = useUi((s) => s.activate)
-  const active = useUi((s) => s.active?.key === `${id}:${n}`)
-  return (
-    <button
-      type="button"
-      onClick={() => activate(`${id}:${n}`, n, citation)}
-      aria-label={`Citation ${n}, page ${citation.page ?? '?'}`}
-      aria-pressed={active}
-      className={`mx-0.5 -translate-y-1.5 align-baseline font-serif text-[12px] leading-none tabular-nums ${
-        isLow(citation) ? 'text-warn underline decoration-dotted' : 'text-accent'
-      } ${active ? 'rounded-sm bg-accent text-on-accent px-0.5' : 'hover:text-accent-strong'}`}
-    >
-      {n}
-    </button>
-  )
-}
-
-export function EvidenceRow({ id, n, citation }: { id: string; n: number; citation: Citation }) {
   const activate = useUi((s) => s.activate)
   const active = useUi((s) => s.active?.key === `${id}:${n}`)
   const low = isLow(citation)
@@ -29,12 +12,53 @@ export function EvidenceRow({ id, n, citation }: { id: string; n: number; citati
     <button
       type="button"
       onClick={() => activate(`${id}:${n}`, n, citation)}
-      title={low ? 'Low-confidence text recognition: check the original.' : undefined}
-      className={`group flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left hover:bg-surface ${active ? 'bg-surface' : ''}`}
+      aria-label={`Citation ${n}, page ${citation.page ?? '?'}`}
+      aria-pressed={active}
+      title={low ? 'Low-confidence text: check the original' : `Page ${citation.page}`}
+      className={`mx-[3px] inline-flex h-[18px] min-w-[18px] -translate-y-[2px] items-center justify-center rounded-[5px] px-1 align-middle font-sans text-[11px] font-semibold leading-none tabular-nums transition-colors ${
+        active
+          ? low
+            ? 'bg-warn text-on-accent'
+            : 'bg-accent text-on-accent'
+          : low
+            ? 'bg-warn/15 text-warn ring-1 ring-warn/40 hover:bg-warn/25'
+            : 'bg-accent/15 text-accent hover:bg-accent/25'
+      }`}
     >
-      <span className={`font-serif tabular-nums ${low ? 'text-warn' : 'text-accent'}`}>{n}</span>
-      <span className="shrink-0 text-muted">p. {citation.page ?? '?'}</span>
-      <span className="line-clamp-1 min-w-0 text-muted group-hover:text-fg">“{citation.quote}”</span>
+      {n}
+    </button>
+  )
+}
+
+/** A verified quote as it appears in the document: clay rule, serif text, page reference. */
+export function SourceQuote({ id, n, citation }: { id: string; n: number; citation: Citation }) {
+  const activate = useUi((s) => s.activate)
+  const active = useUi((s) => s.active?.key === `${id}:${n}`)
+  const low = isLow(citation)
+  return (
+    <button
+      type="button"
+      onClick={() => activate(`${id}:${n}`, n, citation)}
+      className={`group flex w-full gap-3 rounded-lg py-2 pl-2 pr-3 text-left transition-colors ${
+        active ? 'bg-surface' : 'hover:bg-surface/60'
+      }`}
+    >
+      <span
+        className={`mt-[3px] inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-[5px] font-sans text-[11px] font-semibold tabular-nums ${
+          active ? 'bg-accent text-on-accent' : low ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'
+        }`}
+      >
+        {n}
+      </span>
+      <span className={`min-w-0 flex-1 border-l-2 pl-3 ${low ? 'border-warn/60' : 'border-accent/50'}`}>
+        <span className="line-clamp-2 font-serif text-[15px] italic leading-[23px] text-fg/90">{citation.quote}</span>
+        <span className="mt-0.5 block font-sans text-[12px] text-muted">
+          Page {citation.page ?? '?'}
+          {citation.location.regions.length > 1 && `, ${citation.location.regions.length} places`}
+          {citation.match === 'fuzzy' && ', close match'}
+          {low && ', low-confidence text'}
+        </span>
+      </span>
     </button>
   )
 }

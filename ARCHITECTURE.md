@@ -84,8 +84,9 @@ blocks(id, document_version_id, block_id TEXT, ordinal, parent_block_id, section
        type, content TEXT, source_location JSONB, format_metadata JSONB, confidence REAL)
 chunks(id, document_version_id, block_ids TEXT[], text, context_prefix, tsv TSVECTOR,
        embedding VECTOR(640), embedding_model TEXT, token_count)   -- GIN(tsv), HNSW(embedding)
-chat_sessions(id, document_id, ...)   messages(id, session_id, role, content, status, usage JSONB)
-citations(id, message_id, segment_index, block_id, quote, locations JSONB, match_score, flags TEXT[])
+chat_sessions(id, document_id, title, created_at, updated_at)       -- one conversation about one document
+messages(id, session_id, version_id, role, content, status, segments JSONB, usage JSONB)  -- context = this session only
+-- validated citations are stored inside messages.segments[].citations (block_id, quote, page, location, match, flags)
 audit_log(id, owner_id, workspace_id, actor, action, target, at, details JSONB)
 ```
 

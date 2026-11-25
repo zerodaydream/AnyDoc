@@ -13,8 +13,15 @@ if context.config.config_file_name:
 target_metadata = Base.metadata
 
 
+def _include(obj, name, type_, reflected, compare_to) -> bool:  # type: ignore[no-untyped-def]
+    # procrastinate owns its schema (backend.migrate applies it); never let autogenerate drop it.
+    return not (type_ == "table" and name and name.startswith("procrastinate_"))
+
+
 def _run(connection) -> None:  # type: ignore[no-untyped-def]
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, compare_type=True, include_object=_include
+    )
     with context.begin_transaction():
         context.run_migrations()
 

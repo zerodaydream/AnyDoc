@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.config import get_settings
 from backend.core.db import session_dep
 from backend.core.errors import Conflict, InvalidFile, NotFound
-from backend.core.models import AuditLog, Document, DocumentVersion
+from backend.core.models import AuditLog, Block, Document, DocumentVersion
 from backend.extraction.registry import detect
 from backend.ingestion.pipeline import set_state
 from backend.security.auth import Principal, get_principal
@@ -228,3 +228,27 @@ async def retry(
     await db.commit()
     await db.refresh(v)
     return _out(d, v)
+
+
+class OutlineItem(BaseModel):
+    block_id: str
+    text: str
+    page: int | None
+    location: dict[str, Any]
+
+
+@router.get("/{document_id}/outline")
+async def outline(
+    document_id: uuid.UUID, p: Principal = Depends(get_principal), db: AsyncSession = Depends(session_dep)
+) -> list[OutlineItem]:
+    """Headings in reading order: section navigation and grounded starter questions."""
+    _, v = await _load(db, p, document_id)
+    rows = await db.scalars(
+        select(Block)
+        .where(Block.version_id == v.id, Block.owner_id == p.owner_id, Block.type == "heading")
+        .order_by(Block.ordinal)
+        .limit(200)
+    )
+    return [
+        OutlineItem(block_id=b.block_id, text=b.content[:200], page=b.page, location=b.source_location) for b in rows
+    ]

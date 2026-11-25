@@ -49,39 +49,42 @@ All text/background pairs are checked to WCAG AA in M1 with an automated contras
 - Self-hosted through `@fontsource-variable/*` packages; no runtime font CDN (privacy, offline).
 - Scale (1.2 ratio): 12 · 14 · 17 · 20 · 24 · 29. Sentence case everywhere. No all-caps labels.
 
-## Layout
+## Layout (revised 2026-11-25: owner asked for session history and a less bland UI)
 
 ```
-┌───────────────────────────────┬─┬──────────────────────────────────────┐
-│ AnyDoc  ▾ report-q3.pdf       │ │  ◁ 4 / 38 ▷   − 110% +   ⌕   ⤢     │
-│───────────────────────────────│ │──────────────────────────────────────│
-│                               │ │ ┌────────────────────────────┐       │
-│  You                          │ │ │                            │       │
-│  What was Q3 revenue?         │ │ │  ...Revenue for the third  │       │
-│                               │║│ │  ▌quarter was $4.2M, up 12%│ ◀ wash│
-│  Q3 revenue was $4.2 million, │║│ │  ▌from Q2...               │       │
-│  up 12% on the quarter.¹      │ │ │                            │       │
-│  ① p. 4  "Revenue for the     │ │ └────────────────────────────┘       │
-│     third quarter was $4.2M"  │ │                                      │
-│                               │ │                                      │
-│ ┌───────────────────────────┐ │ │                                      │
-│ │ Ask about this document   │ │ │                                      │
-│ └───────────────────────────┘ │ │                                      │
-└───────────────────────────────┴─┴──────────────────────────────────────┘
-   chat ~40% (min 320px)       divider        viewer ~60%
+┌─────────────┬───────────────────────────────┬─┬────────────────────────────────────┐
+│ ▢ AnyDoc  ⟨ │ Which optimizer was used…     │ │ ☰ Sections  [7] of 15  ⌕ Find − 84% + ⤢│
+│ ⊕ New conv. │───────────────────────────────│ │────────────────────────────────────│
+│             │            ╭───────────────╮  │ │   5.3 Optimizer                    │
+│ Today       │            │ user question │  │ │ ┌1┐ ▌We used the Adam optimizer… ◀ wash
+│ ▌Which opt… │            ╰───────────────╯  │ │   rate over the course of training │
+│  attention  │ The Adam optimizer was used 1 │ │                                    │
+│ How many…   │ ┃1 “We used the Adam…”  Page 7 │ │                                    │
+│  attention  │ ╭───────────────────────────╮ │ │                                    │
+│ ☀ Light     │ │ Ask about this document  ↑│ │ │                                    │
+└─────────────┴───────────────────────────────┴─┴────────────────────────────────────┘
+ sidebar 264px     conversation ~42% (≥360px)        document ~58% (≥360px, collapsible)
 ```
 
-- Chat is left-aligned and reads like a page: no bubbles for the assistant, a quiet surface tint for user turns.
-- Viewer canvas is `--sunken`, pages float on it with a 1px `--line` edge, no drop shadow.
-- Divider: 1px line, 8px hit area, grip appears on hover/focus; arrow keys resize; double-click resets.
-- Mobile (< 768px): one panel at a time with a two-tab switch (Chat / Document); tapping a citation switches to Document and scrolls.
+- **Sidebar** (`--sunken`): wordmark, New conversation, conversations grouped Today / Yesterday / Previous 7 days /
+  Previous 30 days / Older; each row = title (first question) + document name. Rename (double-click or pencil),
+  delete (two-step confirm). Collapses to zero width (Ctrl/Cmd+B); a drawer on narrow screens. A conversation
+  appears in the list once it has a first question.
+- **Home** (no conversation open): serif headline, drop zone, and "Start a new conversation about" recent documents.
+- **Conversation**: header with the conversation title; user turns are right-aligned bubbles; answers are serif
+  prose with numbered clay pills; sources below as quote blocks (clay rule, italic serif quote, page). Before the
+  first word: a status line saying what is being read ("Reading the whole document (461 passages)…").
+- **Empty conversation**: document chip, "What would you like to know?", and "Or start with a section" — the
+  document's real headings with page numbers (from `/outline`), so starters are grounded, never invented.
+- **Viewer**: Sections menu, typed page jump, evidence-location stepper (multi-region), find, zoom.
+- Mobile (< 900px): top bar with menu + wordmark, Conversation / Document tabs.
 
-## The one bold thing: the evidence jump
-Everything else stays quiet so this lands.
-- Citations are serif superscript numerals in clay inside the answer, plus a compact evidence row under the paragraph (page + the verified quote, truncated). Numbers are justified: citations are an ordered sequence.
-- Clicking one scrolls the viewer and paints the evidence wash with a 2px clay rule on the left edge of each region. One 240 ms ease-out fade-in of the wash is the only unprompted motion in the product; reduced-motion users get it instantly.
-- Multi-region citations show "1 of 3" stepping in the viewer toolbar.
-- Low-confidence evidence uses `--warn` with a dotted underline and a tooltip stating the confidence.
+## The one bold thing: margin notes
+The evidence jump is the product. Clicking citation *n* paints the clay wash over the exact lines **and pins a
+numbered clay tab in the page margin** beside the first line, the same numeral as the pill in the answer, like an
+annotation in a printed book. The viewer scrolls so the evidence sits ~30% down the viewport (context above it, and
+the toolbar reports the cited page). The 240 ms wash fade is the only unprompted motion; reduced-motion users get
+none. Low-confidence evidence uses `--warn` for wash, pill and pin.
 
 ## States (copy)
 - Empty workspace: "Drop a PDF here or choose a file. Answers will link to the exact page and line." Button: "Choose file".

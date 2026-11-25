@@ -27,6 +27,16 @@ export default function PdfViewer({ src, ref, onState }: ViewerProps) {
     for (const h of highlights.current) {
       for (const region of h.location.regions) {
         if (region.page !== pageNumber) continue
+        // Margin note: the citation's numeral pinned beside the first line of evidence.
+        if (h.label && region.rects.length) {
+          const first = toCssBox(view.viewport, region.rects[0])
+          const pin = document.createElement('div')
+          pin.className = 'ad-hl ad-pin'
+          pin.textContent = h.label
+          pin.dataset.low = String(!!h.lowConfidence)
+          Object.assign(pin.style, { left: `${Math.max(4, first.left - 30)}px`, top: `${first.top + first.height / 2 - 11}px` })
+          view.div.appendChild(pin)
+        }
         for (const rect of region.rects) {
           const box = toCssBox(view.viewport, rect)
           const el = document.createElement('div')
@@ -47,10 +57,13 @@ export default function PdfViewer({ src, ref, onState }: ViewerProps) {
       if (!region || !viewerRef.current) return
       const top = Math.max(...region.rects.map((r) => r[3]))
       const left = Math.min(...region.rects.map((r) => r[0]))
-      // XYZ destination is in PDF user space; nudge up so the evidence isn't flush with the edge.
+      // XYZ destination is in PDF user space. Put the evidence ~30% down the viewport so the lines before it
+      // stay visible and the cited page (not the next one) is the page the toolbar reports.
+      const cssPerPt = viewerRef.current.currentScale * (96 / 72)
+      const above = (containerRef.current?.clientHeight ?? 600) * 0.3 / cssPerPt
       viewerRef.current.scrollPageIntoView({
         pageNumber: region.page,
-        destArray: [null, { name: 'XYZ' }, Math.max(0, left - 24), top + 48, null],
+        destArray: [null, { name: 'XYZ' }, Math.max(0, left - 24), top + above, null],
         allowNegativeOffset: true,
       })
     },
@@ -66,6 +79,10 @@ export default function PdfViewer({ src, ref, onState }: ViewerProps) {
     },
     search(query, previous = false) {
       busRef.current?.dispatch('find', { source: null, type: 'again', query, caseSensitive: false, entireWord: false, highlightAll: true, findPrevious: previous, matchDiacritics: false })
+    },
+    goToPage(page) {
+      const v = viewerRef.current
+      if (v && page >= 1 && page <= v.pagesCount) v.currentPageNumber = page
     },
     zoom(action) {
       const v = viewerRef.current

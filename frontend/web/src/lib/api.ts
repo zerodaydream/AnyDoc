@@ -52,6 +52,18 @@ export type MessageOut = {
   created_at: string
 }
 
+export type SessionOut = {
+  id: string
+  title: string | null
+  document_id: string
+  document_title: string
+  document_status: DocStatus
+  created_at: string
+  updated_at: string
+}
+
+export type OutlineItem = { block_id: string; text: string; page: number | null; location: SourceLocation }
+
 export class ApiError extends Error {
   code: string
   constructor(code: string, message: string) {
@@ -68,10 +80,24 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
 export const api = {
   listDocuments: () => fetch('/api/documents').then(json<DocumentOut[]>),
   getDocument: (id: string) => fetch(`/api/documents/${id}`).then(json<DocumentOut>),
-  messages: (id: string) => fetch(`/api/documents/${id}/messages`).then(json<MessageOut[]>),
+  outline: (id: string) => fetch(`/api/documents/${id}/outline`).then(json<OutlineItem[]>),
+  sessions: () => fetch('/api/sessions').then(json<SessionOut[]>),
+  createSession: (documentId: string) =>
+    fetch('/api/sessions', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ document_id: documentId }) }).then(
+      json<SessionOut>,
+    ),
+  renameSession: (id: string, title: string) =>
+    fetch(`/api/sessions/${id}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ title }) }).then(json<SessionOut>),
+  deleteSession: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
+    if (!res.ok && res.status !== 404) throw new ApiError(`http_${res.status}`, 'Could not delete the conversation.')
+  },
+  messages: (sessionId: string) => fetch(`/api/sessions/${sessionId}/messages`).then(json<MessageOut[]>),
   upload: (file: File) =>
     fetch(`/api/documents?filename=${encodeURIComponent(file.name)}`, {
       method: 'POST',

@@ -1,6 +1,8 @@
+import { ChevronDown } from 'lucide-react'
+import { useState } from 'react'
 import type { AnswerStatus, Citation, Closest, Segment } from '../../lib/api'
-import { CitationMark, EvidenceRow } from '../citations/Citations'
-import { numbered } from './answerReducer'
+import { CitationMark, SourceQuote } from '../citations/Citations'
+import { numbered, type LiveAnswer } from './answerReducer'
 
 type Props = {
   id: string
@@ -8,58 +10,98 @@ type Props = {
   status: AnswerStatus | 'streaming' | string
   closest?: Closest[]
   error?: string | null
+  route?: LiveAnswer['route']
+  blocks?: number
 }
 
 const toCitation = (c: Closest): Citation => ({ ...c, match: 'exact', score: 0, flags: [] })
+const SHOWN = 3
 
-export function AssistantMessage({ id, segments, status, closest = [], error }: Props) {
+export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0 }: Props) {
+  const [expanded, setExpanded] = useState(false)
   const streaming = status === 'streaming'
   const segs = numbered(segments)
-  const all = segs.flatMap((s) => (s.retracted ? [] : s.numbered))
+  const sources = segs.flatMap((s) => (s.retracted ? [] : s.numbered))
   const abstained = status === 'insufficient_evidence'
+  const hasText = segs.some((s) => s.text && !s.retracted)
+  const waiting = streaming && !segs.some((s) => s.text)
 
   return (
-    <article className="font-serif text-[17px] leading-7 text-fg" aria-busy={streaming}>
-      {abstained && !segs.some((s) => s.text && !s.retracted) ? (
-        <p>The document doesn’t say.</p>
-      ) : (
-        <p className={streaming ? 'ad-caret' : undefined}>
-          {segs.map((s, i) =>
-            s.retracted ? (
-              <span key={i} className="text-muted line-through decoration-1" title="Removed: couldn't verify against the document.">
-                {s.text}{' '}
-              </span>
-            ) : (
-              <span key={i}>
-                {s.text}
-                {s.numbered.map(({ n, c }) => (
-                  <CitationMark key={n} id={id} n={n} citation={c} />
-                ))}{' '}
-              </span>
-            ),
-          )}
+    <article className="font-serif text-[17px] leading-[29px] text-fg" aria-busy={streaming}>
+      {waiting && (
+        <p className="flex items-center gap-2.5 font-sans text-[14px] text-muted" aria-live="polite">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-accent/60 motion-reduce:animate-none" />
+            <span className="relative inline-flex size-2 rounded-full bg-accent" />
+          </span>
+          {route === 'hybrid'
+            ? `Searching the document for the most relevant passages (${blocks} selected)…`
+            : route === 'full_context'
+              ? `Reading the whole document (${blocks} passages)…`
+              : 'Opening the document…'}
         </p>
       )}
+
+      {abstained && !hasText ? (
+        <p>The document doesn’t say.</p>
+      ) : (
+        !waiting && (
+          <p className={streaming ? 'ad-caret' : undefined}>
+            {segs.map((s, i) =>
+              s.retracted ? (
+                <span key={i} className="text-muted line-through decoration-muted/60" title="Removed: couldn’t be verified against the document">
+                  {s.text}{' '}
+                </span>
+              ) : (
+                <span key={i}>
+                  {/* Last word + its pills never wrap apart, so a pill can't look like it starts the next sentence. */}
+                  {s.text.slice(0, s.text.trimEnd().lastIndexOf(' ') + 1)}
+                  <span className="whitespace-nowrap">
+                    {s.text.trimEnd().slice(s.text.trimEnd().lastIndexOf(' ') + 1)}
+                    {s.numbered.map(({ n, c }) => (
+                      <CitationMark key={n} id={id} n={n} citation={c} />
+                    ))}
+                  </span>{' '}
+                </span>
+              ),
+            )}
+          </p>
+        )
+      )}
+
       {segs.some((s) => s.retracted) && !streaming && (
-        <p className="mt-1 font-sans text-[13px] text-muted">Struck-through text was removed: it couldn’t be verified against the document.</p>
+        <p className="mt-2 font-sans text-[13px] text-muted">
+          Struck-through text was removed because it couldn’t be verified against the document.
+        </p>
       )}
       {error && (
         <p role="alert" className="mt-2 font-sans text-[14px] text-danger">
           {error}
         </p>
       )}
-      {all.length > 0 && (
-        <div className="mt-2 font-sans text-[13px]">
-          {all.map(({ n, c }) => (
-            <EvidenceRow key={n} id={id} n={n} citation={c} />
+
+      {sources.length > 0 && !streaming && (
+        <div className="mt-3 font-sans">
+          {(expanded ? sources : sources.slice(0, SHOWN)).map(({ n, c }) => (
+            <SourceQuote key={n} id={id} n={n} citation={c} />
           ))}
+          {sources.length > SHOWN && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="ml-2 mt-1 flex items-center gap-1 text-[13px] text-muted hover:text-fg"
+            >
+              <ChevronDown size={14} className={expanded ? 'rotate-180' : ''} />
+              {expanded ? 'Show fewer sources' : `Show all ${sources.length} sources`}
+            </button>
+          )}
         </div>
       )}
+
       {abstained && closest.length > 0 && (
-        <div className="mt-2 font-sans text-[13px]">
-          <p className="px-2 pb-1 text-muted">Closest passages checked:</p>
+        <div className="mt-3 font-sans">
+          <p className="mb-1 text-[13px] text-muted">Closest passages it checked:</p>
           {closest.map((c, i) => (
-            <EvidenceRow key={c.block_id} id={`${id}:closest`} n={i + 1} citation={toCitation(c)} />
+            <SourceQuote key={c.block_id} id={`${id}:closest`} n={i + 1} citation={toCitation(c)} />
           ))}
         </div>
       )}

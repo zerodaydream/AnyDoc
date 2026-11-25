@@ -8,6 +8,8 @@ export type LiveAnswer = {
   status: AnswerStatus | 'streaming'
   closest: Closest[]
   error: string | null
+  route: 'full_context' | 'hybrid' | null
+  blocks: number
 }
 
 export const startAnswer = (question: string): LiveAnswer => ({
@@ -17,6 +19,8 @@ export const startAnswer = (question: string): LiveAnswer => ({
   status: 'streaming',
   closest: [],
   error: null,
+  route: null,
+  blocks: 0,
 })
 
 const seg = (segs: Segment[], i: number): Segment[] => {
@@ -31,7 +35,7 @@ export function applyEvent(a: LiveAnswer, e: SseEvent): LiveAnswer {
   const d = e.data as Record<string, unknown>
   switch (e.event) {
     case 'meta':
-      return { ...a, id: d.message_id as string }
+      return { ...a, id: d.message_id as string, route: d.route as LiveAnswer['route'], blocks: d.blocks as number }
     case 'reset':
       return { ...a, segments: [], status: 'streaming' }
     case 'text_delta': {

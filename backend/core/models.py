@@ -91,6 +91,15 @@ class Block(Owned, Base):
 
 class Chunk(Owned, Base):
     __tablename__ = "chunks"
+    __table_args__ = (
+        Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
+        Index(
+            "ix_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_versions.id", ondelete="CASCADE"), index=True)
     ordinal: Mapped[int] = mapped_column(Integer)
@@ -101,11 +110,23 @@ class Chunk(Owned, Base):
     embedding_model: Mapped[str | None] = mapped_column(String(128))
 
 
+class ChatSession(Owned, Base):
+    """One conversation about one document. Its messages are the only context the model sees."""
+
+    __tablename__ = "chat_sessions"
+    __table_args__ = (Index("ix_chat_sessions_owner_updated", "owner_id", "updated_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Message(Owned, Base):
     __tablename__ = "messages"
-    __table_args__ = (Index("ix_messages_document_created", "document_id", "created_at"),)
+    __table_args__ = (Index("ix_messages_session_created", "session_id", "created_at"),)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"))
     version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_versions.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text)

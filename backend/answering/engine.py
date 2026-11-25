@@ -14,12 +14,12 @@ from typing import Any
 
 from pydantic import ValidationError
 from pydantic_core import from_json
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend.core.config import get_settings
 from backend.core.db import get_sessionmaker
 from backend.core.errors import TransientError
-from backend.core.models import AuditLog, Block, Document, DocumentVersion, Message
+from backend.core.models import AuditLog, Block, ChatSession, Document, DocumentVersion, Message
 from backend.grounding.validator import EvidenceBlock, validate_segment
 from backend.indexing.embeddings import get_embedder
 from backend.llm.base import AnswerOut
@@ -31,6 +31,12 @@ from backend.security.auth import Principal
 
 log = logging.getLogger(__name__)
 Event = dict[str, Any]
+
+
+def session_title(question: str, limit: int = 80) -> str:
+    """First question, cut at a word boundary. shortcut: no LLM title; add one if titles read poorly."""
+    q = " ".join(question.split())
+    return q if len(q) <= limit else q[:limit].rsplit(" ", 1)[0] + "…"
 
 
 def _ev(event: str, **data: Any) -> Event:
@@ -110,21 +116,26 @@ class AnswerSession:
 
 
 @traced("answer")
-async def answer_stream(principal: Principal, document_id: uuid.UUID, question: str) -> AsyncIterator[Event]:
+async def answer_stream(principal: Principal, session_id: uuid.UUID, question: str) -> AsyncIterator[Event]:
     s = get_settings()
     llm = get_llm()
     started = time.perf_counter()
     async with get_sessionmaker()() as db:
-        doc = await db.scalar(
-            select(Document).where(
-                Document.id == document_id,
-                Document.owner_id == principal.owner_id,
-                Document.workspace_id == principal.workspace_id,
+        row = (
+            await db.execute(
+                select(ChatSession, Document)
+                .join(Document, Document.id == ChatSession.document_id)
+                .where(
+                    ChatSession.id == session_id,
+                    ChatSession.owner_id == principal.owner_id,
+                    ChatSession.workspace_id == principal.workspace_id,
+                )
             )
-        )
-        if doc is None:
-            yield _ev("error", code="not_found", message="Document not found.")
+        ).first()
+        if row is None:
+            yield _ev("error", code="not_found", message="Conversation not found.")
             return
+        chat, doc = row
         version = await db.scalar(
             select(DocumentVersion).where(
                 DocumentVersion.document_id == doc.id, DocumentVersion.version == doc.current_version
@@ -137,7 +148,8 @@ async def answer_stream(principal: Principal, document_id: uuid.UUID, question: 
         prior = (
             await db.scalars(
                 select(Message)
-                .where(Message.document_id == doc.id, Message.owner_id == principal.owner_id)
+                # Context is this conversation only: other sessions on the same document are never shared.
+                .where(Message.session_id == chat.id, Message.owner_id == principal.owner_id)
                 .order_by(Message.created_at.desc())
                 .limit(s.history_turns)
             )
@@ -147,12 +159,15 @@ async def answer_stream(principal: Principal, document_id: uuid.UUID, question: 
         user_msg = Message(
             owner_id=principal.owner_id,
             workspace_id=principal.workspace_id,
-            document_id=doc.id,
+            session_id=chat.id,
             version_id=version.id,
             role="user",
             content=question,
         )
         db.add(user_msg)
+        chat.updated_at = func.now()
+        if not chat.title:
+            chat.title = session_title(question)
         db.add(
             AuditLog(
                 owner_id=principal.owner_id,
@@ -254,7 +269,7 @@ async def answer_stream(principal: Principal, document_id: uuid.UUID, question: 
                     id=assistant_id,
                     owner_id=principal.owner_id,
                     workspace_id=principal.workspace_id,
-                    document_id=doc.id,
+                    session_id=chat.id,
                     version_id=version.id,
                     role="assistant",
                     content=" ".join(seg["text"] for seg in segments),

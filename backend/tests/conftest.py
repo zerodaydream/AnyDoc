@@ -3,6 +3,7 @@ import tempfile
 
 # Must run before any backend import: settings are cached on first use.
 os.environ.update(
+    ANYDOC_ENV_FILE="",
     DATABASE_URL=os.environ.get("TEST_DATABASE_URL", "postgresql+psycopg://anydoc:anydoc@localhost:5432/anydoc_test"),
     DATA_DIR=tempfile.mkdtemp(prefix="anydoc-test-"),
     LLM_PROVIDER="fake",

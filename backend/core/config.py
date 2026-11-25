@@ -1,14 +1,28 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # ANYDOC_ENV_FILE="" disables the file (tests). Production has no .env, so real env vars apply.
+    model_config = SettingsConfigDict(env_file=os.environ.get("ANYDOC_ENV_FILE", ".env") or None, extra="ignore")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Owner decision: .env is the source of truth locally; a stray shell export must not override it.
+        return init_settings, dotenv_settings, env_settings, file_secret_settings
 
     app_env: str = "local"
     data_dir: Path = Path("./var/data")

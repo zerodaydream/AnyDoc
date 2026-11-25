@@ -16,3 +16,8 @@ test-results/
 .DS_Store
 eval/data/*
 !eval/data/.gitkeep
+
+.cursor/
+.cursorrules
+.vscode/
+.agents/

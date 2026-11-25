@@ -7,6 +7,19 @@ Read this first every session. Update it last.
 - **M1 — Foundation + PDF vertical slice: built and tested, awaiting owner review.**
 - M2 — blocked until the owner supplies evaluation documents in `eval/data/`.
 
+## Post-M1 change (2026-11-25, owner request)
+- `.env` is authoritative over shell env (pydantic-settings source order); tests opt out via `ANYDOC_ENV_FILE=""`.
+- **Conversations:** `chat_sessions` table (migration `0002`, reversible, existing history migrated one session per
+  document). API `/api/sessions` (list, create, rename, delete, messages, ask). The model's context is the open
+  session only — verified by a test that a second session on the same document never sees the first's questions.
+  Title = first question (cut at a word boundary). `/api/documents/{id}/outline` returns headings.
+- **UI redesign:** collapsible sidebar with grouped conversations (rename, two-step delete, Ctrl/Cmd+B, mobile
+  drawer), home view, grounded section starters, quote-block sources, numbered pills, "what is being read" status,
+  **margin notes** (numbered clay tab pinned beside the evidence), Sections menu, typed page jump, evidence placed
+  ~30% down so the toolbar shows the cited page. Design notes in `docs/DESIGN.md`.
+- Alembic now ignores procrastinate tables and declares the GIN/HNSW indexes (`alembic check` clean).
+- Tests: backend 45, frontend 21, e2e smoke (new flow, real Gemini) green.
+
 ## M1 done
 - Backend (FastAPI, SQLAlchemy async, Alembic, procrastinate, pypdfium2, google-genai, sentence-transformers):
   upload (raw streamed body, size cap, ext + magic bytes) → immutable content-addressed storage → queue →
@@ -66,4 +79,4 @@ Read this first every session. Update it last.
 - OK to build the backend Docker image.
 
 ## Next
-M2 — retrieval quality, after owner review of M1 and evaluation documents.
+Owner review of M1 + the conversation/UI update, then M2 — retrieval quality, after owner review of M1 and evaluation documents.
