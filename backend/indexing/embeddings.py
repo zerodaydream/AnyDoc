@@ -52,9 +52,10 @@ class LocalEmbedder:
                 from sentence_transformers import SentenceTransformer
 
                 device = pick_device(self._device_pref)
-                kwargs = {"torch_dtype": torch.float16} if device in ("cuda", "mps") else {}
+                # bf16, not fp16: harrier (Gemma-3 based) returns wrong rankings in fp16 on MPS (measured M1).
+                kwargs = {"torch_dtype": torch.bfloat16} if device in ("cuda", "mps") else {}
                 self._model = SentenceTransformer(self.model_id, device=device, model_kwargs=kwargs)
-                got = self._model.get_sentence_embedding_dimension()
+                got = self._model.get_embedding_dimension()
                 if got != self.dim:
                     raise RuntimeError(f"EMBED_DIM={self.dim} but {self.model_id} outputs {got}")
                 log.info("embedder_loaded", extra={"model": self.model_id, "device": device})

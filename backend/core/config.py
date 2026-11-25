@@ -1,9 +1,10 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -12,7 +13,7 @@ class Settings(BaseSettings):
     app_env: str = "local"
     data_dir: Path = Path("./var/data")
     database_url: str = "postgresql+psycopg://anydoc:anydoc@localhost:5432/anydoc"
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]  # comma-separated in env
 
     local_owner_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
     local_workspace_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
@@ -43,6 +44,11 @@ class Settings(BaseSettings):
     langsmith_api_key: str = ""
     langsmith_project: str = "anydoc-local"
     trace_content: bool = False
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, v: object) -> object:
+        return [o.strip() for o in v.split(",") if o.strip()] if isinstance(v, str) else v
 
     @property
     def psycopg_dsn(self) -> str:

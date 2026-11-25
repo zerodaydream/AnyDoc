@@ -33,7 +33,7 @@ services:
     env_file: .env
     environment:
       <<: *backend_env
-      CORS_ORIGINS: '["http://localhost:8080"]'
+      CORS_ORIGINS: http://localhost:8080
     command: ["uvicorn", "backend.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
     volumes: [data:/data, hfcache:/root/.cache/huggingface]
     depends_on: { migrate: { condition: service_completed_successfully } }

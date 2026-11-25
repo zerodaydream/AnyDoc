@@ -149,7 +149,7 @@ def _content_words(text: str) -> set[str]:
 def validate_segment(
     text: str, evidence: list[dict[str, str]], blocks: dict[str, EvidenceBlock], fuzzy_min: float
 ) -> SegmentVerdict:
-    """`blocks` must contain only blocks of this document version owned by the caller."""
+    """`blocks` maps the id shown to the model -> block. It must hold only this version's, caller-owned blocks."""
     citations: list[Citation] = []
     rejected: list[dict[str, str]] = []
     for ev in evidence:
@@ -168,7 +168,7 @@ def validate_segment(
             flags.append("low_confidence")
         citations.append(
             Citation(
-                bid,
+                block.block_id,
                 block.content[start:end],
                 block.page,
                 locate(block.kind, block.page, block.format_metadata, start, end),
@@ -181,7 +181,8 @@ def validate_segment(
     if not citations:
         return SegmentVerdict([], rejected, ok=False, reason="no_valid_evidence")
 
-    cited_text = " ".join(blocks[c.block_id].content for c in citations)
+    by_id = {b.block_id: b for b in blocks.values()}
+    cited_text = " ".join(by_id[c.block_id].content for c in citations)
     missing = _numbers(text) - _numbers(cited_text)
     if missing:
         return SegmentVerdict([], rejected, ok=False, reason="unverified_number")

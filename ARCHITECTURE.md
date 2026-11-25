@@ -1,6 +1,6 @@
 # Architecture
 
-Status: **M0 plan, awaiting review.** Nothing below is implemented yet. Technology choices and their evidence: `docs/TECHNOLOGY_EVALUATION.md`. Architectural decisions: `docs/adr/`.
+Status: **M1 implemented** (PDF slice). Deviations from the M0 plan are listed in `PROGRESS.md` → "Decisions made during M1". Technology choices and their evidence: `docs/TECHNOLOGY_EVALUATION.md`. Architectural decisions: `docs/adr/`.
 
 ## 1. System overview
 
@@ -79,8 +79,7 @@ users(id, ...)                       workspaces(id, owner_id, name)
 documents(id, owner_id, workspace_id, title, current_version, status, created_at)
 document_versions(id, document_id, version, storage_key, sha256, size_bytes,
                   detected_format, mime, page_count, metadata JSONB, created_at)   -- immutable
-ingestion_jobs(id, document_version_id, state, progress, attempts, error_code,
-               error_detail, idempotency_key UNIQUE, queue_job_id, timestamps)
+-- ingestion state lives on document_versions (status, progress, stage_detail, error_*, queue_job_id)
 blocks(id, document_version_id, block_id TEXT, ordinal, parent_block_id, section_path TEXT[],
        type, content TEXT, source_location JSONB, format_metadata JSONB, confidence REAL)
 chunks(id, document_version_id, block_ids TEXT[], text, context_prefix, tsv TSVECTOR,
@@ -116,9 +115,9 @@ class Block(BaseModel):
 - `TextLocation{kind:"text", char_start, char_end, line_start, line_end}`
 - later: `DocxLocation`, `SheetLocation{sheet, range}`, `CsvLocation{rows, cols}`, `JsonLocation{pointer/jsonpath}`, `XmlLocation{xpath}`, `SlideLocation{slide, element, rects}`, `ImageLocation{rects_normalised}`, `MediaLocation{start_ms, end_ms, word_ids}`.
 
-**PDF coordinate convention (tested in M1):** PDF points, origin at the **top-left of the page's CropBox**, y down, **before page rotation**. The extractor converts from pdfium's bottom-left page space; the viewer converts to screen with pdf.js `viewport.convertToViewportRectangle`, which applies rotation and scale. Tests cover rotated pages (90/180/270) and non-zero CropBox origins.
+**PDF coordinate convention (tested in M1):** raw **PDF user space** (points, origin bottom-left, y up, unrotated), exactly as PDFium reports char boxes. The viewer converts both corners with pdf.js `viewport.convertToViewportPoint`, which applies CropBox offset, rotation and scale. Tests cover rotations 0/90/180/270 × with/without CropBox offset.
 
-Each PDF block also stores a per-character box table (in `format_metadata`, compact array) so any verified substring maps to exact rects — this is what lets the backend, not the model, produce the highlight.
+Each PDF block also stores a per-word box table (`format_metadata.words`: `[start, end, x0, y0, x1, y1]`) so any verified substring maps to exact rects — this is what lets the backend, not the model, produce the highlight.
 
 ## 6. Ingestion pipeline
 
@@ -131,7 +130,7 @@ worker: extract (FormatRegistry) → IR blocks → chunk → FTS + embeddings �
 ```
 
 - Parsing of untrusted files runs in a **child process** with CPU time and memory limits, so a hostile PDF cannot take down the worker.
-- Progress is written to `ingestion_jobs.progress` and pushed to the client (SSE `GET /api/documents/{id}/events`; polling fallback).
+- Progress is written to `document_versions.progress`; the client polls `GET /api/documents/{id}` every second until a terminal state.
 - Cancellation uses procrastinate `cancel_job_by_id(abort=True)`; tasks check `should_abort()` between pages.
 - Retries: exponential backoff for transient errors (LLM/embedding rate limits); no retry for deterministic failures (malformed file).
 - Temp files live under a per-job dir removed in `finally`.
@@ -153,7 +152,7 @@ Model output schema (Gemini structured output, validated by Pydantic):
 ```
 
 Backend validation, per evidence item:
-1. `block_id` exists, belongs to this document version and principal.
+1. The block exists among this request's evidence blocks (this version, this principal). The model sees short per-request aliases (`b0..bn`) that the server maps back to real `block_id`s.
 2. Quote found in block content: exact → normalised (NFKC, ligature fold, de-hyphenate line breaks, collapse whitespace, casefold) with an index map back to raw offsets → fuzzy fallback (`rapidfuzz` partial alignment, score ≥ `QUOTE_FUZZY_MIN`, default 90, quote ≥ 12 chars).
 3. Numbers and units in the segment text must appear in at least one cited block.
 4. Raw offsets → rects via the block's char-box table. Locations come only from the IR.

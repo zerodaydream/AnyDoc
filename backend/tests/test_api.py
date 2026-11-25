@@ -50,6 +50,7 @@ async def test_upload_ingest_ask_cite(client: Any) -> None:
     assert events[0][1]["route"] == "full_context"
     cite = next(d["citation"] for k, d in events if k == "citation")
     assert cite["page"] == 1 and cite["location"]["kind"] == "pdf"
+    assert cite["block_id"].startswith("pdf:1:")  # alias shown to the model mapped back to the real id
     assert cite["location"]["regions"][0]["rects"]
     assert events[-1][1]["status"] == "answered"
 
@@ -127,3 +128,60 @@ async def test_abort_while_processing(client: Any) -> None:
     doc = await _upload(client, sample_report())
     await ingest(uuid.UUID(client.enqueued[-1]), should_abort=lambda: True)
     assert (await client.get(f"/api/documents/{doc['id']}")).json()["status"] == "cancelled"
+
+
+async def test_stream_failure_retracts_unvalidated_text(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import engine
+    from backend.core.errors import TransientError
+
+    class Flaky:
+        model_id = "flaky"
+
+        async def stream_json(self, system: str, prompt: str, schema: object, usage: dict[str, Any]) -> Any:
+            yield '{"status":"answered","segments":[{"text":"Unverified claim'
+            raise TransientError("gemini 503")
+
+    doc = await _ready_doc(client)
+    monkeypatch.setattr(engine, "get_llm", lambda: Flaky())
+    events = _sse((await client.post(f"/api/documents/{doc['id']}/messages", json={"question": "revenue?"})).text)
+    kinds = [k for k, _ in events]
+    assert kinds.index("segment_retracted") < kinds.index("error")
+    assert ("segment_retracted", {"segment": 0, "reason": "interrupted"}) in events
+    assistant = (await client.get(f"/api/documents/{doc['id']}/messages")).json()[-1]
+    assert assistant["status"] == "error" and assistant["segments"] == [] and assistant["content"] == ""
+
+
+def test_cors_origins_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import Settings
+
+    monkeypatch.setenv("CORS_ORIGINS", "http://a.test, http://b.test")
+    assert Settings().cors_origins == ["http://a.test", "http://b.test"]
+
+
+async def test_mid_stream_failure_restarts_once(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import engine
+    from backend.core.errors import TransientError
+    from backend.llm.providers.fake import FakeProvider
+
+    fake, calls = FakeProvider(), []
+
+    class FlakyOnce:
+        model_id = "flaky-once"
+
+        async def stream_json(self, system: str, prompt: str, schema: Any, usage: dict[str, Any]) -> Any:
+            calls.append(1)
+            if len(calls) == 1:
+                yield '{"status":"answered","segments":[{"text":"Partial'
+                raise TransientError("503")
+            async for d in fake.stream_json(system, prompt, schema, usage):
+                yield d
+
+    doc = await _ready_doc(client)
+    monkeypatch.setattr(engine, "get_llm", lambda: FlakyOnce())
+    events = _sse(
+        (await client.post(f"/api/documents/{doc['id']}/messages", json={"question": "third quarter revenue"})).text
+    )
+    kinds = [k for k, _ in events]
+    assert "reset" in kinds and kinds[-1] == "done" and events[-1][1]["status"] == "answered"
+    after = kinds[kinds.index("reset") :]
+    assert "citation" in after and "segment_retracted" not in kinds

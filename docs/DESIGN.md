@@ -37,8 +37,8 @@ Light:
 | `--line` | `#DAD7CC` |
 | `--text` | `#1F1E1D` |
 | `--text-muted` | `#5E5D59` |
-| `--accent` | `#C2603E` (darker clay for 4.5:1 on light) |
-| `--evidence` | `rgba(194,96,62,0.18)` |
+| `--accent` | `#AD5434` (darker clay: 4.87:1 with light text, checked by the token contrast test) |
+| `--evidence` | `rgba(173,84,52,0.18)` |
 
 All text/background pairs are checked to WCAG AA in M1 with an automated contrast test.
 

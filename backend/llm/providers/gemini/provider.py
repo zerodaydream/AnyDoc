@@ -70,11 +70,23 @@ class GeminiProvider:
         class Ping(BaseModel):
             ok: bool
 
-        r = await self._client.aio.models.generate_content(
-            model=self.model_id,
-            contents='Reply with {"ok": true}.',
-            config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Ping),
-        )
+        for attempt in range(4):  # model "high demand" 503s are common and transient
+            try:
+                r = await self._client.aio.models.generate_content(
+                    model=self.model_id,
+                    contents='Reply with {"ok": true}.',
+                    config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Ping),
+                )
+                break
+            except errors.APIError as e:
+                if e.code not in _RETRYABLE:
+                    raise  # missing model, bad key, no access: fail loudly
+                if attempt == 3:
+                    # Model exists (models.get passed) but is overloaded: start, and let requests retry.
+                    log.warning("gemini_check_model_busy", extra={"model": self.model_id, "code": e.code})
+                    out["structured_output"] = f"unverified: model busy ({e.code})"
+                    return out
+                await asyncio.sleep(2 * 2**attempt)
         Ping.model_validate_json(r.text or "")
         out["structured_output"] = True
         return out

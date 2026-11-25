@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from backend.core.config import get_settings
 from backend.core.db import get_sessionmaker
+from backend.core.errors import TransientError
 from backend.core.models import AuditLog, Block, Document, DocumentVersion, Message
 from backend.grounding.validator import EvidenceBlock, validate_segment
 from backend.indexing.embeddings import get_embedder
@@ -172,7 +173,9 @@ async def answer_stream(principal: Principal, document_id: uuid.UUID, question: 
             s.full_context_token_budget,
             s.retrieval_top_k,
         )
-        session = AnswerSession({b.block_id: _evidence_block(b) for b in got.blocks}, s.quote_fuzzy_min)
+        # Model sees b0, b1, ...: it truncated long ids like pdf:8:7:38b2d058 in live tests.
+        aliased = [(f"b{i}", b) for i, b in enumerate(got.blocks)]
+        session = AnswerSession({a: _evidence_block(b) for a, b in aliased}, s.quote_fuzzy_min)
         assistant_id = uuid.uuid4()
         yield _ev(
             "meta",
@@ -188,10 +191,22 @@ async def answer_stream(principal: Principal, document_id: uuid.UUID, question: 
         status = "error"
         error: dict[str, str] | None = None
         try:
-            async for delta in llm.stream_json(SYSTEM, build_prompt(question, got.blocks, history), AnswerOut, usage):
-                buf += delta
-                for e in session.feed(buf):
-                    yield e
+            prompt = build_prompt(question, aliased, history)
+            for attempt in range(2):
+                try:
+                    async for delta in llm.stream_json(SYSTEM, prompt, AnswerOut, usage):
+                        buf += delta
+                        for e in session.feed(buf):
+                            yield e
+                    break
+                except TransientError:
+                    if attempt == 1:
+                        raise
+                    # Mid-stream provider failure: tell the client to drop partial text, then start over once.
+                    log.warning("answer_stream_restart", extra={"document_id": str(doc.id)})
+                    session = AnswerSession(session.blocks, session.fuzzy_min)
+                    buf = ""
+                    yield _ev("reset")
             try:
                 status, tail = session.finish(buf)
             except (ValidationError, ValueError):
@@ -221,6 +236,11 @@ async def answer_stream(principal: Principal, document_id: uuid.UUID, question: 
             yield _ev("done", status=status, usage=usage, closest=closest)
         except Exception:  # provider failure: tell the client, keep the user's question
             log.exception("answer_failed", extra={"document_id": str(doc.id)})
+            # Text already streamed but never validated must not stay on screen as an answer.
+            for i in range(len(session.s.streamed)):
+                if i not in session.s.verdicts:
+                    session.s.verdicts[i] = {"retracted": "interrupted"}
+                    yield _ev("segment_retracted", segment=i, reason="interrupted")
             error = {
                 "code": "llm_unavailable",
                 "message": "The answer service is unavailable. Try again shortly.",

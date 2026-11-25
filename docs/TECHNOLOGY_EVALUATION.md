@@ -44,7 +44,7 @@ Sources: <https://pypi.org/project/pypdfium2/> · <https://pymupdf.readthedocs.i
 ## D2. PDF viewer
 
 **Alternatives.** `pdfjs-dist` 6.5.438 (Apache-2.0) directly · `react-pdf` 11.1.0 (MIT, wraps pdf.js) · PDFium-WASM / commercial SDKs (Nutrient, Apryse).
-**Selection: `pdfjs-dist` directly.** We need virtualised pages, a custom highlight overlay, range loading and coordinate conversion; a wrapper hides those. pdf.js `PageViewport.convertToViewportRectangle` handles scale and rotation from PDF user space.
+**Selection: `pdfjs-dist` directly** (uses `pdf_viewer.mjs` `PDFViewer` for virtualised pages, text layer and find). Note: pdf.js 6 removed `convertToViewportRectangle`; we convert two corners with `convertToViewportPoint` (verified in M1). We need virtualised pages, a custom highlight overlay, range loading and coordinate conversion; a wrapper hides those. pdf.js `PageViewport.convertToViewportRectangle` handles scale and rotation from PDF user space.
 **Risk.** Extractor (PDFium) and viewer (pdf.js) are different engines. Both use PDF user space, so boxes should agree; M1 adds a test that renders highlight rects and checks they overlap pdf.js text-layer spans for the same text (target ≥ 95 % IoU match on sample PDFs).
 **Replacement.** PDFium-WASM viewer if coordinate disagreement shows up.
 
@@ -79,7 +79,16 @@ Candidates, scores **self-reported on model cards** (read 2026-11-25), not measu
 Excluded: `jina-embeddings-v5-*` (CC-BY-NC, non-commercial); `google/embeddinggemma-300m` (gated, Gemma terms; superseded by embeddinggemma-2); `MongoDB/voyage-4-nano` (needs `trust_remote_code`).
 
 **Selection: `harrier-oss-v1-270m`.** Highest published aggregate score in the sub-300M class, 32K context (whole sections fit), MIT, loads with plain `sentence-transformers` (no remote code). Queries use its retrieval instruction (`prompt_name="web_search_query"` or a custom `Instruct: … \nQuery: `); documents get no prefix.
-**Footprint estimate (not measured):** ~1.1 GB fp32, ~0.55 GB fp16. Runs on Apple MPS when the worker runs natively; CPU in Docker.
+**Measured in M1** (`scripts/research/bench_embedder.py`, Attention paper, 48 chunks of ≤350 tokens, M2 8 GB):
+
+| Device / dtype | Throughput | Peak RSS | Top hit for "How many attention heads…" |
+|---|---|---|---|
+| MPS fp16 | 5.9 chunks/s | 829 MB | **wrong** (copyright notice) |
+| MPS fp32 | 3.7 chunks/s | — | correct (3.2.2 Multi-Head Attention) |
+| **MPS bf16 (selected)** | **9.0 chunks/s** | **879 MB** | correct |
+| CPU fp32 (4 threads) | 0.6 chunks/s | 819 MB | correct |
+
+fp16 is unsafe for this model; GPU paths use bf16. CPU is ~15× slower: Docker (CPU) mode is usable for small documents only — M2 should test `granite-embedding-small-english-r2` as the CPU option. Model download: 536 MB.
 **Caveats.** MTEB v2 score is an aggregate across tasks and languages, not English retrieval alone; self-reported. Not yet measured on this machine (owner skipped the 2 GB local bench at M0).
 **Gate (M1/M2).** M1 measures throughput and peak RAM on the sample PDFs. M2 compares harrier-270m vs granite-small-r2 vs harrier-0.6b on the owner's eval set (recall@k, MRR). Keep the smallest that meets targets.
 **Interface.** `Embedder` protocol in `backend/indexing/embeddings/` (local `SentenceTransformerEmbedder`, optional `GeminiEmbedder`). Model ID, dim, device, batch size from env. Changing model = re-index job keyed by `embedding_model` column on `chunks`.

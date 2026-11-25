@@ -1,0 +1,132 @@
+@import 'tailwindcss';
+@import 'pdfjs-dist/web/pdf_viewer.css';
+
+/* Tokens: docs/DESIGN.md. Dark is the default; light only via the toggle. */
+:root,
+[data-theme='dark'] {
+  --bg: #262624;
+  --surface: #30302e;
+  --sunken: #1f1e1d;
+  --line: #3e3e38;
+  --text: #f5f4ee;
+  --text-muted: #b7b5a9;
+  --accent: #d97757;
+  --accent-strong: #e08a6d;
+  --on-accent: #1f1e1d;
+  --evidence: rgb(217 119 87 / 0.22);
+  --warn: #d4a54a;
+  --danger: #e06c5b;
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --bg: #faf9f5;
+  --surface: #f0eee6;
+  --sunken: #e8e6dc;
+  --line: #dad7cc;
+  --text: #1f1e1d;
+  --text-muted: #5e5d59;
+  --accent: #ad5434;
+  --accent-strong: #93442a;
+  --on-accent: #faf9f5;
+  --evidence: rgb(173 84 52 / 0.18);
+  --warn: #9a6b12;
+  --danger: #b4392a;
+  color-scheme: light;
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-on-accent: var(--on-accent);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4 Variable', ui-serif, Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Viewer: pages float on the sunken canvas with a hairline edge, no shadow. */
+.ad-viewer {
+  background: var(--sunken);
+}
+.ad-viewer .pdfViewer .page {
+  border: 1px solid var(--line);
+  box-shadow: none;
+  margin: 12px auto;
+  position: relative;
+}
+
+/* Evidence wash: the one unprompted motion in the product. */
+.ad-hl {
+  position: absolute;
+  background: var(--evidence);
+  border-left: 2px solid var(--accent);
+  pointer-events: none;
+  z-index: 3;
+  mix-blend-mode: multiply;
+  animation: ad-wash 240ms ease-out;
+}
+[data-theme='dark'] .ad-hl {
+  mix-blend-mode: normal;
+}
+.ad-hl[data-low='true'] {
+  border-left-color: var(--warn);
+  background: rgb(212 165 74 / 0.22);
+}
+@keyframes ad-wash {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ad-hl {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+.ad-caret::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: ad-blink 1s steps(2) infinite;
+}
+@keyframes ad-blink {
+  50% {
+    opacity: 0;
+  }
+}

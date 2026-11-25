@@ -1,0 +1,10 @@
+{
+  "synthetic": true,
+  "note": "Written by the agent on a public paper to smoke-test the pipeline. Not a substitute for the owner's evaluation set (M2).",
+  "document": {
+    "url": "https://arxiv.org/pdf/1706.03762v7",
+    "filename": "attention.pdf",
+    "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+  },
+  "gold_pages_source": "verified against extracted text with backend.extraction (2026-11-25)"
+}

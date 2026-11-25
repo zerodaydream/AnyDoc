@@ -8,7 +8,7 @@ from typing import Protocol
 SYSTEM = """You answer questions about ONE document using ONLY the document blocks provided.
 
 Rules:
-- Every factual claim must cite evidence: the block_id of a provided document_block and a short quote
+- Every factual claim must cite evidence: the id attribute of a provided document_block and a short quote
   (5-30 words) copied character-for-character from that block. Never paraphrase inside a quote.
 - Split the answer into segments of one or two sentences; each segment has its own evidence.
 - Copy numbers, dates and units exactly as the document states them.
@@ -29,14 +29,13 @@ class PromptBlock(Protocol):
     content: str
 
 
-def build_prompt(question: str, blocks: Sequence[PromptBlock], history: list[tuple[str, str]]) -> str:
+def build_prompt(question: str, blocks: Sequence[tuple[str, PromptBlock]], history: list[tuple[str, str]]) -> str:
+    """`blocks` are (alias, block): short per-request ids the model copies reliably."""
     parts = ["<document>"]
-    for b in blocks:
+    for alias, b in blocks:
         section = escape(" > ".join(b.section_path)[:200], quote=True)
         content = _CLOSE_TAG.sub("&lt;/document_block", b.content)
-        parts.append(
-            f'<document_block id="{b.block_id}" page="{b.page}" section="{section}">\n{content}\n</document_block>'
-        )
+        parts.append(f'<document_block id="{alias}" page="{b.page}" section="{section}">\n{content}\n</document_block>')
     parts.append("</document>")
     if history:
         parts.append("<conversation_so_far>")
