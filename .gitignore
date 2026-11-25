@@ -21,3 +21,5 @@ eval/data/*
 .cursorrules
 .vscode/
 .agents/
+skills-lock.json
+scripts/*.sh
