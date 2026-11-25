@@ -1,0 +1,59 @@
+# Dev default: `docker compose up -d postgres`, then run api/worker natively (README).
+# Full stack:  `docker compose --profile full up --build`
+name: anydoc
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17
+    environment:
+      POSTGRES_USER: anydoc
+      POSTGRES_PASSWORD: anydoc
+      POSTGRES_DB: anydoc
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anydoc"]
+      interval: 3s
+      retries: 20
+
+  migrate:
+    profiles: [full]
+    build: { context: ., dockerfile: infrastructure/docker/backend.Dockerfile }
+    env_file: .env
+    environment: &backend_env
+      DATABASE_URL: postgresql+psycopg://anydoc:anydoc@postgres:5432/anydoc
+      DATA_DIR: /data
+      EMBED_DEVICE: cpu
+    command: ["python", "-m", "backend.migrate"]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  api:
+    profiles: [full]
+    build: { context: ., dockerfile: infrastructure/docker/backend.Dockerfile }
+    env_file: .env
+    environment:
+      <<: *backend_env
+      CORS_ORIGINS: '["http://localhost:8080"]'
+    command: ["uvicorn", "backend.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes: [data:/data, hfcache:/root/.cache/huggingface]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+  worker:
+    profiles: [full]
+    build: { context: ., dockerfile: infrastructure/docker/backend.Dockerfile }
+    env_file: .env
+    environment: *backend_env
+    command: ["python", "-m", "backend.workers"]
+    volumes: [data:/data, hfcache:/root/.cache/huggingface]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+  web:
+    profiles: [full]
+    build: { context: ., dockerfile: infrastructure/docker/web.Dockerfile }
+    ports: ["127.0.0.1:8080:80"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  data:
+  hfcache:

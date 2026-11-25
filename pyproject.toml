@@ -1,0 +1,60 @@
+[project]
+name = "anydoc"
+version = "0.1.0"
+description = "Document intelligence workspace with grounded, verifiable citations"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "alembic>=1.20.1",
+    "fastapi>=0.165.0",
+    "google-genai>=3.6.1",
+    "langsmith>=0.16.2",
+    "pgvector>=0.5.1",
+    "procrastinate>=3.12.0",
+    "psycopg[binary,pool]>=3.3.9",
+    "pydantic-settings>=2.16.3",
+    "pypdfium2>=5.15.2",
+    "rapidfuzz>=3.14.6",
+    "sqlalchemy[asyncio]>=2.1.9",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "sentence-transformers>=6.3.0",
+    "torch>=2.15.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC", "S"]
+ignore = ["S101", "B008", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["S", "E501", "E741"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "ruff>=0.17.6",
+]
