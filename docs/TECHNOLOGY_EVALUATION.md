@@ -30,6 +30,8 @@ Versions below were read from PyPI/npm registry APIs on that date. Anything mark
 
 **Findings.** pypdfium2 matches PyMuPDF word counts within ~3 %, at similar speed and the lowest memory. pdfplumber's default `x_tolerance` merged words on a tightly-set paper — fixable, but it is 3–7× slower.
 
+**Licence context (owner, 2026-11-25):** private use now, may host and sell later. AGPL stays excluded so selling later needs no rewrite.
+
 **Selection: pypdfium2** for char-level text, boxes and page rendering. We own word/line/block grouping, which we need anyway to keep an exact char-offset → box map for citations.
 **Limitations.** Reading order for multi-column layouts and tables needs our own heuristics (column detection by x-gaps). Scanned pages have no text layer.
 **Replacement / upgrade path.** Docling as an optional layout pass if M2 eval shows reading-order or table failures; PyMuPDF only with a commercial licence.
@@ -53,14 +55,36 @@ Sources: <https://pypi.org/project/pypdfium2/> · <https://pymupdf.readthedocs.i
 | Component | Choice for M1 | Why | M2 will compare |
 |---|---|---|---|
 | Lexical | Postgres FTS (`tsvector`, GIN, `ts_rank_cd`) | Already in Postgres; no new service. Not true BM25. | `rank-bm25` 0.2.2 in-process; VectorChord-bm25 (check licence). ParadeDB `pg_search` is AGPL → excluded. |
-| Dense | pgvector (`vector(768)`, HNSW cosine) | Brief requires no separate vector DB. 768 dims keeps index small; pgvector HNSW caps `vector` at 2000 dims. | 1536 dims via `halfvec` |
-| Embeddings | `gemini-embedding-2`, `output_dimensionality=768` | No local RAM cost on an 8 GB machine; truncated vectors are auto-normalised for this model. Uses text prefixes (`task: search result \| query: …`) instead of `task_type`. | Local `fastembed` 0.9.1 (Apache-2.0, ONNX) e.g. bge-small for offline mode |
+| Dense | pgvector (`vector(640)`, HNSW cosine) | Brief requires no separate vector DB. pgvector HNSW caps `vector` at 2000 dims. | — |
+| Embeddings | **Local** `microsoft/harrier-oss-v1-270m` (owner decision 2026-11-25: local, lightweight, best retrieval) | See D3a. Document text never leaves the machine for indexing. | `granite-embedding-small-english-r2` (light fallback), `gemini-embedding-2` (API option) |
 | Fusion | Reciprocal rank fusion, k=60 | Parameter-light, standard. | weighted fusion |
 | Reranker | none in M1 | Must earn its place. | Local ONNX cross-encoder via fastembed vs `gemini-3.5-flash-lite` listwise rerank |
 
-Embedding max input: 8,192 tokens per request; longer input is truncated (per docs summary — **verify** in code by counting tokens before embedding).
+### D3a. Local embedding model
 
-Sources: <https://ai.google.dev/gemini-api/docs/embeddings> (redirects to aistudio.google.com/docs/embeddings)
+Requirement (owner): local, lightweight, best retrieval available now. Permissive licence (owner may sell later). Must run on an 8 GB M2.
+
+Candidates, scores **self-reported on model cards** (read 2026-11-25), not measured by us:
+
+| Model | Params | Dim | Max tokens | Licence | Published score |
+|---|---|---|---|---|---|
+| **microsoft/harrier-oss-v1-270m** | 268M | 640 | 32,768 | MIT | MTEB v2 (multilingual) 66.5 |
+| microsoft/harrier-oss-v1-0.6b | 596M | 1024 | 32,768 | MIT | MTEB v2 (multilingual) 69.0 |
+| google/embeddinggemma-2 | 740M total (270M text) | 768 | 8,192 | Apache-2.0 | MTEB multilingual v2 61.36, eng v2 68.46 |
+| Qwen/Qwen3-Embedding-0.6B | 596M | 1024 | 32K | Apache-2.0 | Qwen card's own tables (not used to rank here) |
+| ibm-granite/granite-embedding-small-english-r2 | 47M | 384 | 8K | Apache-2.0 | MTEB v2 41-task 61.1; BEIR(15) 50.9; MTEB-v2 retrieval 53.9 |
+| ibm-granite/granite-embedding-english-r2 | 149M | 768 | 8K | Apache-2.0 | MTEB v2 41-task 62.8; BEIR(15) 53.1 |
+| BAAI/bge-small-en-v1.5 | 33M | 384 | 512 | MIT | MTEB-v2 retrieval 53.9 (per granite card) |
+
+Excluded: `jina-embeddings-v5-*` (CC-BY-NC, non-commercial); `google/embeddinggemma-300m` (gated, Gemma terms; superseded by embeddinggemma-2); `MongoDB/voyage-4-nano` (needs `trust_remote_code`).
+
+**Selection: `harrier-oss-v1-270m`.** Highest published aggregate score in the sub-300M class, 32K context (whole sections fit), MIT, loads with plain `sentence-transformers` (no remote code). Queries use its retrieval instruction (`prompt_name="web_search_query"` or a custom `Instruct: … \nQuery: `); documents get no prefix.
+**Footprint estimate (not measured):** ~1.1 GB fp32, ~0.55 GB fp16. Runs on Apple MPS when the worker runs natively; CPU in Docker.
+**Caveats.** MTEB v2 score is an aggregate across tasks and languages, not English retrieval alone; self-reported. Not yet measured on this machine (owner skipped the 2 GB local bench at M0).
+**Gate (M1/M2).** M1 measures throughput and peak RAM on the sample PDFs. M2 compares harrier-270m vs granite-small-r2 vs harrier-0.6b on the owner's eval set (recall@k, MRR). Keep the smallest that meets targets.
+**Interface.** `Embedder` protocol in `backend/indexing/embeddings/` (local `SentenceTransformerEmbedder`, optional `GeminiEmbedder`). Model ID, dim, device, batch size from env. Changing model = re-index job keyed by `embedding_model` column on `chunks`.
+
+Sources: <https://huggingface.co/microsoft/harrier-oss-v1-270m> · <https://huggingface.co/ibm-granite/granite-embedding-small-english-r2> · <https://huggingface.co/google/embeddinggemma-2> · <https://huggingface.co/Qwen/Qwen3-Embedding-0.6B>
 
 ---
 
@@ -85,7 +109,13 @@ Read from the official models, pricing and deprecations pages (ai.google.dev now
 |---|---|---|---|
 | Answering | `gemini-3.8-flash` (`LLM_ANSWER_MODEL`) | Stable, no shutdown date | $0.75 in / $3.75 out until 2026-12-31; $1.50 / $7.50 from 2027-01-01 |
 | Cheap high-volume | `gemini-3.5-flash-lite` (`LLM_FAST_MODEL`) | Stable, no shutdown date | $0.30 in / $2.50 out |
-| Embeddings | `gemini-embedding-2` (`LLM_EMBED_MODEL`) | Stable (2026-04-22) | $0.20 text input |
+| Embeddings | local, see D3a (`gemini-embedding-2` kept as optional `GeminiEmbedder`) | — | — |
+
+Owner asked for "3.8-flash-lite": **no such text model exists** (only `gemini-3.8-flash-lite-tts`, a speech model). Newest stable Flash-Lite is `gemini-3.5-flash-lite`. Swap via env when Google ships one.
+
+**Billing (owner has Google AI Pro).** Google's docs state AI Pro subscription plans are separate from Gemini API usage tiers; the API needs a key on a Cloud Billing paid tier (prepay minimum $10). A key without billing runs on the free tier, where content may be used to improve Google's products. Source: <https://ai.google.dev/gemini-api/docs/google-ai-plans>, <https://ai.google.dev/gemini-api/docs/billing>.
+
+**Cost policy (owner, 2026-11-25):** no cost cap for now. Token and cost accounting per request stays on.
 
 Rejected: `gemini-2.5-*` (2.5-pro and 2.5-flash shut down 2026-12-01); `gemini-3.1-flash-lite` (shutdown 2027-05-07); `gemini-3.1-pro-preview` (preview); Gemini 4 family (no stable/preview badge on the models page — status **unverified**, and two of them are not on the free tier).
 

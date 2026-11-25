@@ -64,6 +64,7 @@ All are `typing.Protocol`s with a local implementation now and a production one 
 | `LLMProvider` | `GeminiProvider`, `FakeProvider` for tests/offline | same | `generate`, `stream`, `generate_structured`, `embed`, `count_tokens` |
 | `FormatHandler` | one per format | — | `detect(head_bytes, filename)`, `validate(path)`, `extract(path) -> Iterable[Block]` |
 | `Tracer` | LangSmith wrapper, no-op fallback | + OpenTelemetry | `@traced(name, kind)`, `trace_metadata(**kv)` |
+| `Embedder` | `SentenceTransformerEmbedder` (harrier-oss-v1-270m, MPS/CPU) | same, or `GeminiEmbedder` | `embed_documents`, `embed_query`, `dim`, `model_id` |
 
 `Storage.access_url` returns an API path (`/api/files/{id}/content`) locally and a signed URL in production, so the frontend never cares which.
 
@@ -83,7 +84,7 @@ ingestion_jobs(id, document_version_id, state, progress, attempts, error_code,
 blocks(id, document_version_id, block_id TEXT, ordinal, parent_block_id, section_path TEXT[],
        type, content TEXT, source_location JSONB, format_metadata JSONB, confidence REAL)
 chunks(id, document_version_id, block_ids TEXT[], text, context_prefix, tsv TSVECTOR,
-       embedding VECTOR(768), token_count)                    -- GIN(tsv), HNSW(embedding)
+       embedding VECTOR(640), embedding_model TEXT, token_count)   -- GIN(tsv), HNSW(embedding)
 chat_sessions(id, document_id, ...)   messages(id, session_id, role, content, status, usage JSONB)
 citations(id, message_id, segment_index, block_id, quote, locations JSONB, match_score, flags TEXT[])
 audit_log(id, owner_id, workspace_id, actor, action, target, at, details JSONB)
@@ -138,7 +139,7 @@ worker: extract (FormatRegistry) → IR blocks → chunk → FTS + embeddings �
 ## 7. Retrieval and answering (M1 baseline; M2 measures everything)
 
 1. **Router.** If the whole document's IR ≤ `FULL_CONTEXT_TOKEN_BUDGET` (default 120k tokens, config), send all blocks labelled by `block_id`. Otherwise retrieve.
-2. **Hybrid retrieval.** Postgres FTS (`websearch_to_tsquery`, `ts_rank_cd`) + pgvector cosine (HNSW) → reciprocal rank fusion (k=60) → top-k chunks → expand to their blocks + neighbours.
+2. **Hybrid retrieval.** Postgres FTS (`websearch_to_tsquery`, `ts_rank_cd`) + pgvector cosine (HNSW) over local embeddings (document text is not sent anywhere for indexing; only blocks used for an answer go to Gemini) → reciprocal rank fusion (k=60) → top-k chunks → expand to their blocks + neighbours.
 3. **Exact-match boost** for numbers, dates and quoted strings in the question (FTS phrase query).
 4. Reranker, contextual enrichment, query decomposition, hierarchical summaries: **not in M1**. Each is added in M2 only if it wins on the eval set.
 
@@ -186,7 +187,9 @@ Deferred to M-Prod: real auth, tenant-isolation tests at scale, malware scanning
 
 ## 12. Compute
 
-Startup probes hardware (CPU count, RAM, CUDA/MPS availability) and logs it. In v1 the heavy ML (generation, embeddings) runs on Gemini, so local compute is parsing only. Local models (reranker, OCR, ASR) arrive in later milestones with config for device, threads and max concurrency. On macOS, containers cannot use the Apple GPU; ML workers needing MPS run natively (documented in README).
+Startup probes hardware (CPU count, RAM, CUDA/MPS availability) and logs it. Generation runs on Gemini; embeddings run locally (`EMBED_DEVICE=auto` → cuda, then mps, then cpu). Embedding batch size and worker concurrency are bounded by config so the 8 GB machine is not exhausted.
+
+**Run modes (owner decision).** Default dev: Postgres in Docker; `api` and `worker` run natively on macOS (`uv run`), which also gives the embedder Apple MPS. A full Compose stack (web, api, worker, postgres) is kept working and tested; in it the embedder runs on CPU. Local models (reranker, OCR, ASR) arrive in later milestones with config for device, threads and max concurrency. On macOS, containers cannot use the Apple GPU; ML workers needing MPS run natively (documented in README).
 
 ## 13. Path to production
 

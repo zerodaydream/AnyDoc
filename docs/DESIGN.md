@@ -2,6 +2,8 @@
 
 Brief from the owner: **a Claude-style UI, dark mode first.** That pins the visual direction (warm charcoal surfaces, warm off-white text, clay accent, serif reading voice). Light theme ships too (brief §3). AnyDoc keeps its own name and wordmark; it does not use Anthropic logos, the Claude spark mark or the word "Claude" anywhere in the product.
 
+**Theme behaviour (owner decision):** the app always opens dark, whatever the OS setting. A toggle in the header switches to light; the choice is remembered per browser. No "follow system" mode.
+
 ## Subject, audience, job
 - **Subject:** reading a document and checking answers against it.
 - **Audience:** people who verify — analysts, researchers, lawyers, students.

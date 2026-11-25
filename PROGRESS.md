@@ -20,17 +20,23 @@ Empty directory, not a git repository. Nothing to reuse. Initialised git (`main`
 |---|---|---|
 | D1 | PDF extraction | pypdfium2 + own grouping (PyMuPDF excluded: AGPL) |
 | D2 | PDF viewer | pdfjs-dist 6.5.x directly, custom overlay |
-| D3 | Retrieval baseline | Postgres FTS + pgvector(768) + RRF; `gemini-embedding-2`; no reranker until M2 proves one |
+| D3 | Retrieval baseline | Postgres FTS + pgvector(640) + RRF; local `harrier-oss-v1-270m` embeddings; no reranker until M2 proves one |
 | D4 | Job queue | procrastinate (Postgres, no Redis) |
-| D5 | Gemini models | answer `gemini-3.8-flash`, fast `gemini-3.5-flash-lite`, embed `gemini-embedding-2` (env-configured) |
+| D5 | Gemini models | answer `gemini-3.8-flash`, fast `gemini-3.5-flash-lite` (no 3.8 Flash-Lite text model exists), env-configured; no cost cap |
+| Run | Dev mode | Postgres in Docker; api + worker native on macOS; full Compose stack also maintained |
 | D6 | Tracing | LangSmith via own `@traced` wrapper, inputs/outputs hidden by default; no `wrap_gemini` |
-| UI | Design | Claude-style dark default + light; Source Serif 4 / Hanken Grotesk; `docs/DESIGN.md` |
-| Licence | Policy | No AGPL/SSPL in hosted path |
+| UI | Design | Always opens dark, light toggle remembered; Source Serif 4 / Hanken Grotesk; name "AnyDoc"; `docs/DESIGN.md` |
+| Licence | Policy | Private use now, may sell later → no AGPL/SSPL/non-commercial deps |
+
+## Owner answers (2026-11-25)
+Private now, maybe host/sell later · local embeddings, lightest best-retrieval model · Gemini 3.8 Flash family · no cost cap · Postgres-only Docker in dev, full Compose kept · always dark · name AnyDoc final.
 
 ## Unverified (must be checked in M1 code)
 - Per-model input token limits for Gemini 3.x (read via `models.get` at startup).
 - Structured output + streaming structured output support on chosen models (smoke test).
 - pdfium ↔ pdf.js coordinate agreement (test).
+- harrier-oss-v1-270m speed and peak RAM on this Mac (M1); retrieval quality vs alternatives (M2).
+- Owner's Gemini key is on a billed paid tier (AI Pro subscription does not include API access).
 
 ## Blocked / waiting on owner
 - Docker Desktop daemon not running (needed for M1).
