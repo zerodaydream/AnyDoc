@@ -28,6 +28,10 @@ type UiState = {
   sidebarOpen: boolean
   active: ActiveCitation | null
   mobileTab: 'chat' | 'document'
+  model: string | null // null = server default; validated against /api/models before use
+  thinking: string | null // a level, 'off', or null = server default
+  setModel: (m: string) => void
+  setThinking: (t: string) => void
   toggleTheme: () => void
   openSession: (id: string | null) => void
   toggleSidebar: (open?: boolean) => void
@@ -43,6 +47,16 @@ export const useUi = create<UiState>((set, get) => ({
   sidebarOpen: read('anydoc.sidebar') !== 'closed',
   active: null,
   mobileTab: 'chat',
+  model: read('anydoc.model'),
+  thinking: read('anydoc.thinking'),
+  setModel: (model) => {
+    write('anydoc.model', model)
+    set({ model })
+  },
+  setThinking: (thinking) => {
+    write('anydoc.thinking', thinking)
+    set({ thinking })
+  },
   toggleTheme: () => {
     const theme: Theme = get().theme === 'dark' ? 'light' : 'dark'
     document.documentElement.dataset.theme = theme

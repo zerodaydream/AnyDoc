@@ -6,6 +6,7 @@ evidence fails is retracted. Locations come from the IR, never from the model.
 """
 
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -22,7 +23,7 @@ from backend.core.errors import TransientError
 from backend.core.models import AuditLog, Block, ChatSession, Document, DocumentVersion, Message
 from backend.grounding.validator import EvidenceBlock, validate_segment
 from backend.indexing.embeddings import get_embedder
-from backend.llm.base import AnswerOut
+from backend.llm.base import AnswerOut, UnsupportedOption
 from backend.llm.factory import get_llm
 from backend.llm.prompts import SYSTEM, build_prompt
 from backend.observability.tracing import trace_metadata, traced
@@ -37,6 +38,15 @@ def session_title(question: str, limit: int = 80) -> str:
     """First question, cut at a word boundary. shortcut: no LLM title; add one if titles read poorly."""
     q = " ".join(question.split())
     return q if len(q) <= limit else q[:limit].rsplit(" ", 1)[0] + "…"
+
+
+_ALIAS_REF = re.compile(r"\b[Bb]lock\s+b(\d+)\b")
+
+
+def _page_ref(aliased: list[tuple[str, Block]], m: re.Match[str]) -> str:
+    """Thought summaries mention internal aliases ("Block b130"); show readers a page instead."""
+    i = int(m.group(1))
+    return f"the passage on page {aliased[i][1].page}" if i < len(aliased) else "a passage"
 
 
 def _ev(event: str, **data: Any) -> Event:
@@ -116,7 +126,14 @@ class AnswerSession:
 
 
 @traced("answer")
-async def answer_stream(principal: Principal, session_id: uuid.UUID, question: str) -> AsyncIterator[Event]:
+async def answer_stream(
+    principal: Principal,
+    session_id: uuid.UUID,
+    question: str,
+    model: str | None = None,
+    thinking: str | None = None,
+) -> AsyncIterator[Event]:
+    """`model` / `thinking` must already be validated against the configured allow-lists."""
     s = get_settings()
     llm = get_llm()
     started = time.perf_counter()
@@ -197,19 +214,33 @@ async def answer_stream(principal: Principal, session_id: uuid.UUID, question: s
             message_id=str(assistant_id),
             user_message_id=str(user_msg.id),
             route=got.route,
-            model=llm.model_id,
+            model=model or llm.model_id,
+            thinking=thinking,
             blocks=len(got.blocks),
         )
 
-        usage: dict[str, Any] = {}
+        usage: dict[str, Any] = {"thinking_level": thinking}
         buf = ""
+        reasoning: list[str] = []  # model's thought summaries: shown as reasoning, never as evidence
+        think_started: float | None = None
         status = "error"
         error: dict[str, str] | None = None
         try:
             prompt = build_prompt(question, aliased, history)
             for attempt in range(2):
+                # Thinking time = request start to first answer text (summaries often arrive in one late chunk).
+                think_started = time.perf_counter() if thinking else None
                 try:
-                    async for delta in llm.stream_json(SYSTEM, prompt, AnswerOut, usage):
+                    async for kind, delta in llm.stream_json(
+                        SYSTEM, prompt, AnswerOut, usage, model=model, thinking=thinking
+                    ):
+                        if kind == "thought":
+                            delta = _ALIAS_REF.sub(lambda m: _page_ref(aliased, m), delta)
+                            reasoning.append(delta)
+                            yield _ev("thinking_delta", text=delta)
+                            continue
+                        if think_started is not None and reasoning and "thinking_ms" not in usage:
+                            usage["thinking_ms"] = int((time.perf_counter() - think_started) * 1000)
                         buf += delta
                         for e in session.feed(buf):
                             yield e
@@ -220,7 +251,8 @@ async def answer_stream(principal: Principal, session_id: uuid.UUID, question: s
                     # Mid-stream provider failure: tell the client to drop partial text, then start over once.
                     log.warning("answer_stream_restart", extra={"document_id": str(doc.id)})
                     session = AnswerSession(session.blocks, session.fuzzy_min)
-                    buf = ""
+                    buf, reasoning, think_started = "", [], None
+                    usage.pop("thinking_ms", None)
                     yield _ev("reset")
             try:
                 status, tail = session.finish(buf)
@@ -249,6 +281,9 @@ async def answer_stream(principal: Principal, session_id: uuid.UUID, question: s
                     )
             usage["total_ms"] = int((time.perf_counter() - started) * 1000)
             yield _ev("done", status=status, usage=usage, closest=closest)
+        except UnsupportedOption as e:
+            error = {"code": "unsupported_option", "message": f"{e} Pick another model or thinking level."}
+            yield _ev("error", **error)
         except Exception:  # provider failure: tell the client, keep the user's question
             log.exception("answer_failed", extra={"document_id": str(doc.id)})
             # Text already streamed but never validated must not stay on screen as an answer.
@@ -276,6 +311,7 @@ async def answer_stream(principal: Principal, session_id: uuid.UUID, question: s
                     status=status if error is None else "error",
                     segments=segments,
                     usage=usage,
+                    reasoning="".join(reasoning) or None,
                 )
             )
             await db.commit()
@@ -283,7 +319,6 @@ async def answer_stream(principal: Principal, session_id: uuid.UUID, question: s
                 document_id=str(doc.id),
                 document_version=version.version,
                 route=got.route,
-                model=llm.model_id,
                 status=status,
                 citations_valid=sum(len(x["citations"]) for x in segments),
                 citations_rejected=session.s.rejected,

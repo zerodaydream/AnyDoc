@@ -7,6 +7,29 @@ Read this first every session. Update it last.
 - **M1 — Foundation + PDF vertical slice: built and tested, awaiting owner review.**
 - M2 — blocked until the owner supplies evaluation documents in `eval/data/`.
 
+## Post-M1: model choice + thinking (2026-11-25, owner request, uncommitted per owner)
+- `.env`: `LLM_MODELS` (picker list; `LLM_ANSWER_MODEL` is the default and always included), `LLM_THINKING_LEVELS`,
+  `LLM_THINKING_DEFAULT`, `MAX_QUESTION_CHARS`. `GET /api/models` returns each model's input/output token limits and
+  whether it thinks (from `models.get`, no generation), the allowed levels and the question limit.
+- Ask accepts `model` + `thinking` (level or `off`), validated against the lists (422 otherwise). Gemini
+  `ThinkingConfig(thinking_level, include_thoughts=True)`; thought parts stream as `thinking_delta`, are stored in
+  `messages.reasoning` (migration `0003`), and are never treated as evidence. A model rejecting an option (HTTP 400)
+  returns `unsupported_option` with the model's message. Internal aliases in reasoning ("Block b130") are shown as pages.
+- UI: composer has Thinking and Model menus (remembered per browser) and a `n / 4,000` character counter. Claude
+  Code–style thinking block: turning clay ✻ glyph + shimmering "Thinking" + timer and latest-line preview while live;
+  collapses to "✻ Thought for 8.4s", expands to the summary (headings/bold rendered) with a note that only the
+  answer is checked. Thinking time = request start → first answer text.
+- Verified live: `gemini-3.5-flash-lite` reports `thinking: true`, 1,048,576 input tokens; MEDIUM returns thought
+  summaries. Other levels and other models were not probed live (owner declined the sweep) — unsupported combinations
+  surface as a clear error.
+- Per-model levels: `LLM_MODEL_THINKING` JSON (`{"model":"low,medium*,high"}`, `*` = default) from the owner's
+  table (unverified by us). Menu shows only the selected model's levels; server and client clamp unsupported picks
+  to the nearest level (minimal->low, xhigh->high). Failed model lookups are cached 5 min (picker loads fast).
+  Live: 8 of 10 configured models available; `gemini-3.1-pro-preview` and `gemini-3-flash-preview` are not
+  accessible with the current key (shown disabled).
+- Sidebar tooltip: full conversation title on hover/focus when truncated; palette tokens; 140 ms fade/slide.
+- Tests: backend 59, frontend 34, e2e with real thinking green.
+
 ## Post-M1 change (2026-11-25, owner request)
 - `.env` is authoritative over shell env (pydantic-settings source order); tests opt out via `ANYDOC_ENV_FILE=""`.
 - **Conversations:** `chat_sessions` table (migration `0002`, reversible, existing history migrated one session per

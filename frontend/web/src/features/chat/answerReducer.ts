@@ -10,6 +10,9 @@ export type LiveAnswer = {
   error: string | null
   route: 'full_context' | 'hybrid' | null
   blocks: number
+  reasoning: string
+  thinkingStartedAt: number | null
+  thinkingMs: number | null
 }
 
 export const startAnswer = (question: string): LiveAnswer => ({
@@ -21,6 +24,9 @@ export const startAnswer = (question: string): LiveAnswer => ({
   error: null,
   route: null,
   blocks: 0,
+  reasoning: '',
+  thinkingStartedAt: null,
+  thinkingMs: null,
 })
 
 const seg = (segs: Segment[], i: number): Segment[] => {
@@ -30,15 +36,28 @@ const seg = (segs: Segment[], i: number): Segment[] => {
   return next
 }
 
+const now = () => Date.now()
+
 /** Pure reducer over the answer SSE protocol (backend/answering/engine.py). */
 export function applyEvent(a: LiveAnswer, e: SseEvent): LiveAnswer {
   const d = e.data as Record<string, unknown>
   switch (e.event) {
     case 'meta':
-      return { ...a, id: d.message_id as string, route: d.route as LiveAnswer['route'], blocks: d.blocks as number }
+      return {
+        ...a,
+        id: d.message_id as string,
+        route: d.route as LiveAnswer['route'],
+        blocks: d.blocks as number,
+        // Thinking time runs from the request, not the first summary chunk (often delivered all at once).
+        thinkingStartedAt: d.thinking ? now() : null,
+      }
     case 'reset':
-      return { ...a, segments: [], status: 'streaming' }
+      return { ...a, segments: [], status: 'streaming', reasoning: '', thinkingStartedAt: a.thinkingStartedAt && now(), thinkingMs: null }
+    case 'thinking_delta':
+      return { ...a, reasoning: a.reasoning + (d.text as string), thinkingStartedAt: a.thinkingStartedAt ?? now() }
     case 'text_delta': {
+      // First answer text ends the thinking phase.
+      if (a.reasoning && a.thinkingStartedAt !== null && a.thinkingMs === null) a = { ...a, thinkingMs: now() - a.thinkingStartedAt }
       const segments = seg(a.segments, d.segment as number)
       segments[d.segment as number].text += d.text as string
       return { ...a, segments }

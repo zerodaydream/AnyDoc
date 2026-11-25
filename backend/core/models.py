@@ -133,6 +133,7 @@ class Message(Owned, Base):
     status: Mapped[str] = mapped_column(String(32), default="complete")
     segments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    reasoning: Mapped[str | None] = mapped_column(Text)  # model thought summaries (not evidence)
     created_at: Mapped[datetime] = _now()
 
 

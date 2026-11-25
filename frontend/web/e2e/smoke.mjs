@@ -31,6 +31,8 @@ await page.keyboard.press('Enter')
 const firstCite = page.getByRole('button', { name: /^Citation 1, page/ }).first()
 await firstCite.waitFor({ timeout: 120_000 })
 await page.waitForFunction(() => !document.querySelector('[aria-busy=true]'), null, { timeout: 120_000 })
+const thinks = await page.getByText('Thought', { exact: true }).count()
+console.log(thinks ? 'thinking block shown' : 'no thinking block (model did not return thoughts)')
 await firstCite.click()
 await page.locator('.pdfViewer .page[data-page-number] .ad-pin').first().waitFor({ timeout: 15_000 })
 await page.waitForTimeout(800) // let pdf.js finish re-rendering the target page (pins are repainted then)
@@ -47,6 +49,18 @@ await shot(page, '2-cited')
 // Conversation title came from the first question and the sidebar lists it.
 const title = question.slice(0, 30)
 await page.getByRole('navigation', { name: 'Conversations' }).getByText(title, { exact: false }).first().waitFor()
+
+if (thinks) {
+  await page.getByText('Thought', { exact: true }).click()
+  await page.waitForTimeout(250)
+  await shot(page, '2b-thinking-open')
+}
+await page.getByRole('button', { name: 'Thinking' }).click()
+await shot(page, '2c-thinking-menu')
+await page.keyboard.press('Escape')
+await page.getByRole('button', { name: 'Model' }).click()
+await shot(page, '2d-model-menu')
+await page.keyboard.press('Escape')
 
 await page.keyboard.press('Control+b')
 await page.waitForTimeout(350)

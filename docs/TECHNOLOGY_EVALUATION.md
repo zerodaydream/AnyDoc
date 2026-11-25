@@ -164,3 +164,18 @@ Postgres: `pgvector/pgvector:pg17` image (tag to be pinned in M1 after pulling).
 - **ffmpeg is broken** on this machine (`Library not loaded: /opt/homebrew/opt/tesseract/lib/libtesseract.5.dylib`). Fix before M11: `brew reinstall tesseract ffmpeg`.
 - **LibreOffice not installed.** Needed only if DOCX/PPTX go the convert-to-PDF route (M4/M9).
 - **Docker daemon was not running** at research time.
+
+---
+
+## D7. Reasoning (thinking) controls — added post-M1
+
+Verified from the installed `google-genai` 3.6.1 source: `types.ThinkingConfig(include_thoughts, thinking_budget, thinking_level)`;
+`types.ThinkingLevel` = `MINIMAL, LOW, MEDIUM, HIGH, XHIGH`; response parts carry `thought: bool`, and
+`GenerateContentResponse.text` excludes thought parts (so we iterate parts). `types.Model.thinking` (bool) and
+`input_token_limit` come from `models.get` without generating.
+
+Live (2026-11-25): `gemini-3.5-flash-lite` → `thinking: true`, MEDIUM returns thought summaries alongside structured
+JSON. **Not verified:** which levels each model accepts (owner declined a probe sweep). Design: levels come from
+`LLM_THINKING_LEVELS`; a 400 from the API is reported to the user as `unsupported_option` naming the model.
+Thought summaries are model output about the document — stored and shown as reasoning, never used as evidence and
+never logged.

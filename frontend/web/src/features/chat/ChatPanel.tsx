@@ -6,6 +6,8 @@ import { postSse } from '../../lib/sse'
 import { useUi } from '../../stores/ui'
 import { applyEvent, numbered, startAnswer, type LiveAnswer } from './answerReducer'
 import { AssistantMessage } from './AssistantMessage'
+import { ModelControls } from './ModelControls'
+import { useModelChoice } from './modelChoice'
 import { starterQuestions } from './starters'
 
 export function ChatPanel({ session, doc }: { session: SessionOut; doc: DocumentOut }) {
@@ -20,6 +22,7 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
   const end = useRef<HTMLDivElement>(null)
   const activate = useUi((s) => s.activate)
   const busy = live?.status === 'streaming'
+  const choice = useModelChoice()
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' }) // newer Chromium returns a Promise: never return it as cleanup
@@ -33,7 +36,8 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
     setLive(startAnswer(q))
     abort.current = new AbortController()
     try {
-      await postSse(`/api/sessions/${session.id}/messages`, { question: q }, (e) => setLive((a) => (a ? applyEvent(a, e) : a)), abort.current.signal)
+      const body = { question: q, model: choice.current?.id, thinking: choice.level }
+      await postSse(`/api/sessions/${session.id}/messages`, body, (e) => setLive((a) => (a ? applyEvent(a, e) : a)), abort.current.signal)
     } catch (err) {
       if ((err as Error).name !== 'AbortError') setLive((a) => a && { ...a, status: 'error', error: 'Connection lost. Try again.' })
     }
@@ -108,7 +112,7 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
             m.role === 'user' ? (
               <UserBubble key={m.id} text={m.content} />
             ) : (
-              <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} />
+              <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} reasoning={m.reasoning} thinkingMs={m.thinking_ms} />
             ),
           )}
           {showLive && live && <UserBubble text={live.question} />}
@@ -121,6 +125,9 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
               error={live.error}
               route={live.route}
               blocks={live.blocks}
+              reasoning={live.reasoning}
+              thinkingStartedAt={live.thinkingStartedAt}
+              thinkingMs={live.thinkingMs}
             />
           )}
           <div ref={end} />
@@ -145,16 +152,26 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
               }
             }}
             rows={1}
-            maxLength={4000}
+            maxLength={choice.maxChars}
             disabled={!ready}
             placeholder={ready ? 'Ask about this document' : 'Available once the document is ready'}
             aria-label="Ask about this document"
             className="block max-h-48 min-h-7 w-full resize-none bg-transparent px-1 text-[15px] leading-6 text-fg outline-none [field-sizing:content] placeholder:text-muted disabled:cursor-not-allowed"
           />
-          <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="mt-2 flex items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-1.5 truncate pl-1 text-[12px] text-muted">
               <FileText size={13} className="shrink-0" />
               <span className="truncate">{doc.title}</span>
+            </span>
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              <ModelControls />
+              <span
+                className={`px-1 text-[12px] tabular-nums ${draft.length > choice.maxChars * 0.9 ? 'text-warn' : 'text-muted/80'}`}
+                aria-label={`${draft.length} of ${choice.maxChars} characters`}
+                title="Characters used of the question limit"
+              >
+                {draft.length.toLocaleString()} / {choice.maxChars.toLocaleString()}
+              </span>
             </span>
             {busy ? (
               <button type="button" onClick={() => abort.current?.abort()} aria-label="Stop answering" className="grid size-8 shrink-0 place-items-center rounded-lg bg-line text-fg hover:bg-muted/30">

@@ -19,13 +19,31 @@ class AnswerOut(BaseModel):
     segments: list[Segment]
 
 
+Delta = tuple[Literal["thought", "text"], str]
+
+
+class UnsupportedOption(Exception):
+    """The provider rejected a user-selected option (e.g. a thinking level the model doesn't support)."""
+
+
 class LLMProvider(Protocol):
     model_id: str
 
     def stream_json(
-        self, system: str, prompt: str, schema: type[BaseModel], usage: dict[str, Any]
-    ) -> AsyncIterator[str]:
-        """Yield raw JSON text deltas conforming to `schema`. Fills `usage` when done."""
+        self,
+        system: str,
+        prompt: str,
+        schema: type[BaseModel],
+        usage: dict[str, Any],
+        *,
+        model: str | None = None,
+        thinking: str | None = None,
+    ) -> AsyncIterator[Delta]:
+        """Yield ("thought", text) reasoning summaries and ("text", json) answer deltas conforming to `schema`."""
+        ...
+
+    async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:
+        """Metadata for the picker: input/output token limits, whether the model thinks. No generation."""
         ...
 
     async def check(self) -> dict[str, Any]:

@@ -49,7 +49,30 @@ export type MessageOut = {
   content: string
   status: string
   segments: Segment[]
+  reasoning: string | null
+  model: string | null
+  thinking_level: string | null
+  thinking_ms: number | null
   created_at: string
+}
+
+export type ModelInfo = {
+  id: string
+  name: string
+  input_token_limit: number | null
+  output_token_limit: number | null
+  thinking: boolean
+  available: boolean
+  thinking_levels: string[] // levels this model accepts ([] when it doesn't think)
+  default_thinking: string | null
+}
+
+export type ModelsOut = {
+  models: ModelInfo[]
+  default_model: string
+  thinking_levels: string[]
+  default_thinking: string
+  max_question_chars: number
 }
 
 export type SessionOut = {
@@ -85,6 +108,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' }
 export const api = {
   listDocuments: () => fetch('/api/documents').then(json<DocumentOut[]>),
   getDocument: (id: string) => fetch(`/api/documents/${id}`).then(json<DocumentOut>),
+  models: () => fetch('/api/models').then(json<ModelsOut>),
   outline: (id: string) => fetch(`/api/documents/${id}/outline`).then(json<OutlineItem[]>),
   sessions: () => fetch('/api/sessions').then(json<SessionOut[]>),
   createSession: (documentId: string) =>

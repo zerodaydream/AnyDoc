@@ -149,8 +149,8 @@ async def test_stream_failure_retracts_unvalidated_text(client: Any, monkeypatch
     class Flaky:
         model_id = "flaky"
 
-        async def stream_json(self, system: str, prompt: str, schema: object, usage: dict[str, Any]) -> Any:
-            yield '{"status":"answered","segments":[{"text":"Unverified claim'
+        async def stream_json(self, system: str, prompt: str, schema: object, usage: dict[str, Any], **kw: Any) -> Any:
+            yield ("text", '{"status":"answered","segments":[{"text":"Unverified claim')
             raise TransientError("gemini 503")
 
     doc = await _ready_doc(client)
@@ -180,12 +180,12 @@ async def test_mid_stream_failure_restarts_once(client: Any, monkeypatch: pytest
     class FlakyOnce:
         model_id = "flaky-once"
 
-        async def stream_json(self, system: str, prompt: str, schema: Any, usage: dict[str, Any]) -> Any:
+        async def stream_json(self, system: str, prompt: str, schema: Any, usage: dict[str, Any], **kw: Any) -> Any:
             calls.append(1)
             if len(calls) == 1:
-                yield '{"status":"answered","segments":[{"text":"Partial'
+                yield ("text", '{"status":"answered","segments":[{"text":"Partial')
                 raise TransientError("503")
-            async for d in fake.stream_json(system, prompt, schema, usage):
+            async for d in fake.stream_json(system, prompt, schema, usage, **kw):
                 yield d
 
     doc = await _ready_doc(client)
@@ -209,9 +209,9 @@ async def test_sessions_do_not_share_context(client: Any, monkeypatch: pytest.Mo
     class Spy:
         model_id = "spy"
 
-        async def stream_json(self, system: str, prompt: str, schema: Any, usage: dict[str, Any]) -> Any:
+        async def stream_json(self, system: str, prompt: str, schema: Any, usage: dict[str, Any], **kw: Any) -> Any:
             prompts.append(prompt)
-            async for d in fake.stream_json(system, prompt, schema, usage):
+            async for d in fake.stream_json(system, prompt, schema, usage, **kw):
                 yield d
 
     doc = await _ready_doc(client)
@@ -253,3 +253,135 @@ def test_session_title_cuts_at_word_boundary() -> None:
     assert session_title("short  question ") == "short question"
     t = session_title("word " * 40)
     assert t.endswith("…") and len(t) <= 81 and not t.endswith(" …")
+
+
+async def test_models_endpoint_lists_env_choices(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "llm_models", ["gemini-x", s.llm_answer_model])
+    monkeypatch.setattr(s, "llm_thinking_levels", ["LOW", "high"])
+    body = (await client.get("/api/models")).json()
+    assert [m["id"] for m in body["models"]] == [s.llm_answer_model, "gemini-x"]  # default first, no duplicates
+    assert body["thinking_levels"] == ["low", "high"]
+    assert body["max_question_chars"] == s.max_question_chars
+    assert body["models"][0]["input_token_limit"] > 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"question": "q", "model": "not-enabled"}, {"question": "q", "thinking": "ultra"}, {"question": "x" * 5000}],
+)
+async def test_ask_rejects_options_outside_allow_lists(client: Any, payload: dict[str, Any]) -> None:
+    doc = await _ready_doc(client)
+    assert (await client.post(f"/api/sessions/{doc['sid']}/messages", json=payload)).status_code == 422
+
+
+async def test_thinking_streams_and_persists(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import engine
+    from backend.llm.providers.fake import FakeProvider
+
+    seen: dict[str, Any] = {}
+    fake = FakeProvider()
+
+    class Spy:
+        model_id = "spy"
+
+        async def stream_json(self, system: str, prompt: str, schema: Any, usage: dict[str, Any], **kw: Any) -> Any:
+            seen.update(kw)
+            async for d in fake.stream_json(system, prompt, schema, usage, **kw):
+                yield d
+
+    doc = await _ready_doc(client)
+    monkeypatch.setattr(engine, "get_llm", lambda: Spy())
+    r = await client.post(
+        f"/api/sessions/{doc['sid']}/messages", json={"question": "third quarter revenue", "thinking": "HIGH"}
+    )
+    events = _sse(r.text)
+    assert seen == {"model": None, "thinking": "high"}
+    assert events[0][1]["thinking"] == "high"
+    kinds = [k for k, _ in events]
+    assert kinds.index("thinking_delta") < kinds.index("text_delta")
+    msg = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()[-1]
+    assert msg["reasoning"] == "Looking for the passage that answers the question."
+    assert msg["thinking_level"] == "high" and msg["thinking_ms"] is not None
+
+    await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "revenue?", "thinking": "off"})
+    assert seen["thinking"] is None
+
+
+async def test_unsupported_option_is_explained(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import engine
+    from backend.llm.base import UnsupportedOption
+
+    class Picky:
+        model_id = "picky"
+
+        async def stream_json(self, *a: Any, **kw: Any) -> Any:
+            raise UnsupportedOption("picky rejected this request: thinking level xhigh is not supported.")
+            yield  # pragma: no cover
+
+    doc = await _ready_doc(client)
+    monkeypatch.setattr(engine, "get_llm", lambda: Picky())
+    events = _sse((await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "revenue?"})).text)
+    assert events[-1][0] == "error" and events[-1][1]["code"] == "unsupported_option"
+    assert "xhigh" in events[-1][1]["message"]
+
+
+@pytest.mark.parametrize(
+    ("level", "supported", "want"),
+    [
+        ("minimal", ["low", "medium", "high"], "low"),
+        ("xhigh", ["low", "medium", "high"], "high"),
+        ("xhigh", ["minimal", "low", "medium", "high"], "high"),
+        ("medium", ["low", "high"], "low"),  # tie goes to the cheaper level
+        ("high", ["low", "medium", "high", "xhigh"], "high"),
+    ],
+)
+def test_clamp_level(level: str, supported: list[str], want: str) -> None:
+    from backend.core.config import clamp_level
+
+    assert clamp_level(level, supported) == want
+
+
+def test_per_model_thinking_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import Settings
+
+    monkeypatch.setenv("LLM_MODEL_THINKING", '{"neon": "low,medium,high*,xhigh", "lite": "minimal*,low,medium,high"}')
+    monkeypatch.setenv("LLM_THINKING_LEVELS", "minimal,low,medium,high")  # global list still caps levels
+    s = Settings()
+    assert s.thinking_for("neon") == (["low", "medium", "high"], "high")
+    assert s.thinking_for("lite") == (["minimal", "low", "medium", "high"], "minimal")
+    assert s.thinking_for("unlisted") == (["minimal", "low", "medium", "high"], "medium")
+
+
+async def test_models_and_ask_use_per_model_levels(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import engine
+    from backend.core.config import get_settings
+    from backend.llm.providers.fake import FakeProvider
+
+    s = get_settings()
+    monkeypatch.setattr(s, "llm_models", ["capped"])
+    monkeypatch.setattr(s, "llm_model_thinking", {"capped": "low,medium*,high"})
+    by_id = {m["id"]: m for m in (await client.get("/api/models")).json()["models"]}
+    assert by_id["capped"]["thinking_levels"] == ["low", "medium", "high"]
+    assert by_id["capped"]["default_thinking"] == "medium"
+
+    seen: list[str | None] = []
+    fake = FakeProvider()
+
+    class Spy:
+        model_id = "spy"
+
+        async def stream_json(self, system: str, prompt: str, schema: Any, usage: dict[str, Any], **kw: Any) -> Any:
+            seen.append(kw["thinking"])
+            async for d in fake.stream_json(system, prompt, schema, usage, **kw):
+                yield d
+
+    doc = await _ready_doc(client)
+    monkeypatch.setattr(engine, "get_llm", lambda: Spy())
+    url = f"/api/sessions/{doc['sid']}/messages"
+    await client.post(url, json={"question": "revenue?", "model": "capped", "thinking": "xhigh"})
+    await client.post(url, json={"question": "revenue?", "model": "capped", "thinking": "minimal"})
+    await client.post(url, json={"question": "revenue?", "model": "capped"})
+    assert seen == ["high", "low", "medium"]

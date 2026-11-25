@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { AnswerStatus, Citation, Closest, Segment } from '../../lib/api'
 import { CitationMark, SourceQuote } from '../citations/Citations'
 import { numbered, type LiveAnswer } from './answerReducer'
+import { ThinkingBlock } from './ThinkingBlock'
 
 type Props = {
   id: string
@@ -12,12 +13,15 @@ type Props = {
   error?: string | null
   route?: LiveAnswer['route']
   blocks?: number
+  reasoning?: string | null
+  thinkingStartedAt?: number | null
+  thinkingMs?: number | null
 }
 
 const toCitation = (c: Closest): Citation => ({ ...c, match: 'exact', score: 0, flags: [] })
 const SHOWN = 3
 
-export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0 }: Props) {
+export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0, reasoning, thinkingStartedAt, thinkingMs }: Props) {
   const [expanded, setExpanded] = useState(false)
   const streaming = status === 'streaming'
   const segs = numbered(segments)
@@ -25,10 +29,12 @@ export function AssistantMessage({ id, segments, status, closest = [], error, ro
   const abstained = status === 'insufficient_evidence'
   const hasText = segs.some((s) => s.text && !s.retracted)
   const waiting = streaming && !segs.some((s) => s.text)
+  const thinkingLive = streaming && !!reasoning && thinkingMs == null
 
   return (
     <article className="font-serif text-[17px] leading-[29px] text-fg" aria-busy={streaming}>
-      {waiting && (
+      {reasoning && <ThinkingBlock text={reasoning} live={thinkingLive} startedAt={thinkingStartedAt} ms={thinkingMs} />}
+      {waiting && !reasoning && (
         <p className="flex items-center gap-2.5 font-sans text-[14px] text-muted" aria-live="polite">
           <span className="relative flex size-2">
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-accent/60 motion-reduce:animate-none" />

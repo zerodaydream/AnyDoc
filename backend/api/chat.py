@@ -8,11 +8,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.answering.engine import answer_stream
+from backend.core.config import clamp_level, get_settings
 from backend.core.db import session_dep
 from backend.core.errors import NotFound
 from backend.core.models import AuditLog, ChatSession, Document, DocumentVersion, Message
@@ -40,7 +41,20 @@ class SessionOut(BaseModel):
 
 
 class AskIn(BaseModel):
-    question: str = Field(min_length=1, max_length=4000)
+    question: str = Field(min_length=1)
+    model: str | None = None  # None = configured default
+    thinking: str | None = None  # None = configured default; "off" = no thinking config
+
+    @model_validator(mode="after")
+    def _allowed(self) -> "AskIn":
+        s = get_settings()
+        if len(self.question) > s.max_question_chars:
+            raise ValueError(f"Questions are limited to {s.max_question_chars} characters.")
+        if self.model is not None and self.model not in s.allowed_models:
+            raise ValueError(f"Model {self.model!r} is not enabled.")
+        if self.thinking is not None and self.thinking != "off" and self.thinking.lower() not in s.thinking_levels:
+            raise ValueError(f"Thinking level {self.thinking!r} is not enabled.")
+        return self
 
 
 class MessageOut(BaseModel):
@@ -49,6 +63,10 @@ class MessageOut(BaseModel):
     content: str
     status: str
     segments: list[dict[str, Any]]
+    reasoning: str | None
+    model: str | None
+    thinking_level: str | None
+    thinking_ms: int | None
     created_at: datetime
 
 
@@ -152,7 +170,16 @@ async def history(
     )
     return [
         MessageOut(
-            id=m.id, role=m.role, content=m.content, status=m.status, segments=m.segments, created_at=m.created_at
+            id=m.id,
+            role=m.role,
+            content=m.content,
+            status=m.status,
+            segments=m.segments,
+            reasoning=m.reasoning,
+            model=m.usage.get("model"),
+            thinking_level=m.usage.get("thinking_level"),
+            thinking_ms=m.usage.get("thinking_ms"),
+            created_at=m.created_at,
         )
         for m in rows
     ]
@@ -161,7 +188,12 @@ async def history(
 @router.post("/{session_id}/messages")
 async def ask(session_id: uuid.UUID, body: AskIn, p: Principal = Depends(get_principal)) -> StreamingResponse:
     async def sse() -> AsyncIterator[str]:
-        async for e in answer_stream(p, session_id, body.question.strip()):
+        s = get_settings()
+        model = body.model or s.llm_answer_model
+        levels, default = s.thinking_for(model)
+        # Clamp to what this model accepts so the API never sees an unsupported level.
+        thinking = None if body.thinking == "off" else clamp_level((body.thinking or default).lower(), levels)
+        async for e in answer_stream(p, session_id, body.question.strip(), body.model, thinking):
             yield f"event: {e['event']}\ndata: {json.dumps(e['data'], separators=(',', ':'))}\n\n"
 
     return StreamingResponse(

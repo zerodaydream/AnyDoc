@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Moon, PanelLeftClose, Pencil, Plus, Sun, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { Tooltip } from '../../components/ui/Tooltip'
 import { api, type SessionOut } from '../../lib/api'
 import { useUi } from '../../stores/ui'
 import { bucket } from './bucket'
@@ -88,6 +89,7 @@ function SessionRow({ s, active, onOpen }: { s: SessionOut; active: boolean; onO
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLSpanElement>(null)
   const rename = useMutation({
     mutationFn: (title: string) => api.renameSession(s.id, title),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sessions'] }),
@@ -138,17 +140,22 @@ function SessionRow({ s, active, onOpen }: { s: SessionOut; active: boolean; onO
 
   return (
     <li className="group relative">
-      <button
-        onClick={onOpen}
-        onDoubleClick={() => setEditing(true)}
-        aria-current={active ? 'page' : undefined}
-        className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 pr-16 text-left ${
-          active ? 'bg-surface text-fg' : 'text-fg/85 hover:bg-surface/60'
-        }`}
+      <Tooltip
+        content={title}
+        when={() => !!titleRef.current && titleRef.current.scrollWidth > titleRef.current.clientWidth}
       >
-        <span className="truncate">{title}</span>
-        <span className="truncate text-[12px] leading-4 text-muted">{s.document_title}</span>
-      </button>
+        <button
+          onClick={onOpen}
+          onDoubleClick={() => setEditing(true)}
+          aria-current={active ? 'page' : undefined}
+          className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 pr-16 text-left ${
+            active ? 'bg-surface text-fg' : 'text-fg/85 hover:bg-surface/60'
+          }`}
+        >
+          <span ref={titleRef} className="truncate">{title}</span>
+          <span className="truncate text-[12px] leading-4 text-muted">{s.document_title}</span>
+        </button>
+      </Tooltip>
       <div
         className={`absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 ${
           confirming ? '' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'

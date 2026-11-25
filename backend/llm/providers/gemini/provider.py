@@ -11,9 +11,21 @@ from google.genai import errors, types
 from pydantic import BaseModel
 
 from backend.core.errors import TransientError
+from backend.llm.base import Delta, UnsupportedOption
 
 log = logging.getLogger(__name__)
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
+
+
+def _unavailable(mid: str) -> dict[str, Any]:
+    return {
+        "id": mid,
+        "name": mid,
+        "input_token_limit": None,
+        "output_token_limit": None,
+        "thinking": False,
+        "available": False,
+    }
 
 
 class GeminiProvider:
@@ -21,38 +33,59 @@ class GeminiProvider:
         self.model_id = model_id
         self.fast_model_id = fast_model_id
         self._client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
+        self._meta: dict[str, dict[str, Any]] = {}
+        self._failed: dict[str, float] = {}
 
     async def stream_json(
-        self, system: str, prompt: str, schema: type[BaseModel], usage: dict[str, Any]
-    ) -> AsyncIterator[str]:
+        self,
+        system: str,
+        prompt: str,
+        schema: type[BaseModel],
+        usage: dict[str, Any],
+        *,
+        model: str | None = None,
+        thinking: str | None = None,
+    ) -> AsyncIterator[Delta]:
+        model = model or self.model_id
         config = types.GenerateContentConfig(
             system_instruction=system,
             response_mime_type="application/json",
             response_schema=schema,
             temperature=0.0,
+            thinking_config=(
+                types.ThinkingConfig(thinking_level=types.ThinkingLevel(thinking.upper()), include_thoughts=True)
+                if thinking
+                else None
+            ),
         )
         started = time.perf_counter()
         for attempt in range(3):
             emitted = False
             try:
                 stream = await self._client.aio.models.generate_content_stream(
-                    model=self.model_id, contents=prompt, config=config
+                    model=model, contents=prompt, config=config
                 )
                 async for chunk in stream:
                     if chunk.usage_metadata:
                         um = chunk.usage_metadata
                         usage.update(
-                            model=self.model_id,
+                            model=model,
                             input_tokens=um.prompt_token_count or 0,
                             output_tokens=um.candidates_token_count or 0,
                             thinking_tokens=um.thoughts_token_count or 0,
                         )
-                    if chunk.text:
+                    content = chunk.candidates[0].content if chunk.candidates else None
+                    for part in (content.parts or []) if content else []:
+                        if not part.text:
+                            continue
                         emitted = True
-                        yield chunk.text
+                        yield ("thought" if part.thought else "text", part.text)
                 usage["latency_ms"] = int((time.perf_counter() - started) * 1000)
                 return
             except errors.APIError as e:
+                if e.code == 400 and not emitted:
+                    # Usually an option this model doesn't support (thinking level, structured output).
+                    raise UnsupportedOption(f"{model} rejected this request: {str(e.message)[:200]}") from e
                 # Retry only before any output reached the caller; mid-stream retries would duplicate text.
                 if emitted or e.code not in _RETRYABLE or attempt == 2:
                     if e.code in _RETRYABLE:
@@ -60,6 +93,30 @@ class GeminiProvider:
                     raise
                 log.warning("gemini_retry", extra={"code": e.code, "attempt": attempt + 1})
                 await asyncio.sleep(2**attempt)
+
+    async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:
+        async def one(mid: str) -> dict[str, Any]:
+            failed_at = self._failed.get(mid)
+            if failed_at and time.monotonic() - failed_at < 300:  # don't re-hit a missing model on every picker load
+                return _unavailable(mid)
+            if mid not in self._meta:
+                try:
+                    m = await self._client.aio.models.get(model=mid)
+                    self._meta[mid] = {
+                        "id": mid,
+                        "name": m.display_name or mid,
+                        "input_token_limit": m.input_token_limit,
+                        "output_token_limit": m.output_token_limit,
+                        "thinking": bool(m.thinking),
+                        "available": True,
+                    }
+                except errors.APIError as e:
+                    log.warning("gemini_model_lookup_failed", extra={"model": mid, "code": e.code})
+                    self._failed[mid] = time.monotonic()
+                    return _unavailable(mid)
+            return self._meta[mid]
+
+        return list(await asyncio.gather(*(one(m) for m in model_ids)))
 
     async def check(self) -> dict[str, Any]:
         out: dict[str, Any] = {}

@@ -166,3 +166,14 @@ def test_hash_chunker_roundtrip(tmp_path: Path) -> None:
     chunks = chunk_blocks(bl)
     assert [bid for c in chunks for bid in c.block_ids] == [b.block_id for b in bl]
     assert chunks[-1].text.startswith("Outlook")
+
+
+def test_reasoning_alias_refs_become_pages() -> None:
+    from types import SimpleNamespace
+
+    from backend.answering.engine import _ALIAS_REF, _page_ref
+
+    aliased = [("b0", SimpleNamespace(page=1)), ("b1", SimpleNamespace(page=7))]
+    text = "Found it in Block b1, not block b9; b1 alone and β2 stay."
+    out = _ALIAS_REF.sub(lambda m: _page_ref(aliased, m), text)  # type: ignore[arg-type]
+    assert out == "Found it in the passage on page 7, not a passage; b1 alone and β2 stay."
