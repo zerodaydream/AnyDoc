@@ -146,6 +146,33 @@ def test_abstain_status(blocks: dict[str, EvidenceBlock]) -> None:
     assert status == "insufficient_evidence" and events == []
 
 
+def test_suggestion_sent_after_cited_answer(blocks: dict[str, EvidenceBlock]) -> None:
+    good = _para(blocks, "Revenue")
+    answer: dict[str, object] = {
+        "status": "answered",
+        "segments": [
+            {
+                "text": "Revenue was $4.2 million.",
+                "evidence": [{"block_id": good.block_id, "quote": "third quarter was $4.2 million"}],
+            }
+        ],
+        "suggestion": "  You could ask   how costs changed.  ",
+    }
+    s = AnswerSession(blocks, 90)
+    events = [e for buf in _script(answer) for e in s.feed(buf)]
+    # The last segment validates as soon as the suggestion starts, not only at the end.
+    assert any(e["event"] == "citation" for e in events)
+    _, tail = s.finish(json.dumps(answer))
+    assert tail[-1] == {"event": "suggestion", "data": {"text": "You could ask how costs changed."}}
+    assert s.s.suggestion == "You could ask how costs changed."
+
+
+def test_no_suggestion_when_abstaining(blocks: dict[str, EvidenceBlock]) -> None:
+    s = AnswerSession(blocks, 90)
+    status, events = s.finish('{"status": "answered", "segments": [], "suggestion": "Ask about revenue."}')
+    assert status == "insufficient_evidence" and events == [] and s.s.suggestion is None
+
+
 def test_prompt_escapes_block_close_tag() -> None:
     from backend.llm.prompts import build_prompt
 

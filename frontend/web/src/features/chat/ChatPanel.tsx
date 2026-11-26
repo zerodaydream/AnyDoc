@@ -122,7 +122,7 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
             m.role === 'user' ? (
               <UserBubble key={m.id} text={m.content} />
             ) : (
-              <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} reasoning={m.reasoning} thinkingMs={m.thinking_ms} />
+              <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} reasoning={m.reasoning} suggestion={m.suggestion} thinkingMs={m.thinking_ms} />
             ),
           )}
           {showLive && live && !questionSaved && <UserBubble text={live.question} />}
@@ -136,6 +136,7 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
               route={live.route}
               blocks={live.blocks}
               reasoning={live.reasoning}
+              suggestion={live.suggestion}
               thinkingStartedAt={live.thinkingStartedAt}
               thinkingMs={live.thinkingMs}
             />

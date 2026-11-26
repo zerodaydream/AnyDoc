@@ -46,6 +46,16 @@ Read this first every session. Update it last.
   shielded scope; the UI ends the stream, drops unverified text, shows "Response stopped." and dedupes the question
   by `user_message_id`. Tests: backend stop-recording, reducer/message, ChatPanel stop flow.
 
+- **Fuller answers + suggestion; preview highlight polish (owner request 2026-11-26):** prompt asks for the direct
+  answer plus the supporting details the blocks give (often 3–6 cited segments, no padding). `AnswerOut.suggestion`
+  is an optional, uncited next step (follow-up question / where to look), streamed as a `suggestion` event after
+  validation, sent only for answers that cite something, capped at 400 chars, stored in `messages.suggestion`
+  (migration 0004), shown under the answer with a lightbulb; dropped on stop/error/abstain. Preview wash is now a
+  `::before` swiped in left to right (420 ms; off with reduced motion); list items put the bar left of the bullet;
+  fenced code (e.g. file trees) is washed as one `<pre>` block instead of per-line strips, with the quote painted.
+  Checked in Brave via a static CSS harness (bullet clearance, single tree block, swipe mid-frame); not yet with live
+  Gemini answers.
+
 ### M3 known limitations
 - Preview highlights are block-level when the quoted words aren't contiguous in rendered text (e.g. a quote that
   includes a link URL); the Markdown view is always exact. Images in Markdown are never loaded.

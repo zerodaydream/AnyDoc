@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { SourceLocation } from '../../lib/api'
 import type { Highlight, ViewerMode, ViewerProps } from '../core/contract'
-import { blockAtLine, blocksForLines, findRanges, paintRanges, rangeForQuote, renderMarkdown } from './preview'
+import { blockAtLine, blocksForLines, findRanges, paintRanges, rangeForQuote, renderMarkdown, washTargets } from './preview'
 import {
   codePointIndex,
   decodeText,
@@ -291,22 +291,24 @@ const MarkdownPreview = memo(function MarkdownPreview({ html, doc, hl, find, con
     el.querySelectorAll('.ad-md-hit').forEach((n) => n.classList.remove('ad-md-hit'))
     el.querySelectorAll('[data-low]').forEach((n) => n.removeAttribute('data-low'))
     el.querySelectorAll('.ad-md-pin').forEach((n) => n.remove())
+    void el.offsetWidth // reflow, so a re-cited block replays its swipe-in
     const ranges: Range[] = []
     for (const h of hl) {
       textRegions(h.location).forEach((r, i) => {
         const blocks = blocksForLines(el, r.line_start, r.line_end)
-        for (const b of blocks) {
+        for (const b of washTargets(blocks)) {
           b.classList.add('ad-md-hit')
           if (h.lowConfidence) b.dataset.low = 'true'
         }
         const range = rangeForQuote(blocks, doc.text.slice(doc.toUnit(r.char_start), doc.toUnit(r.char_end)))
         if (range) ranges.push(range)
         if (i === 0 && h.label && blocks[0]) {
+          const at = washTargets(blocks)[0]
           const pin = document.createElement('span')
           pin.className = 'ad-pin ad-md-pin'
           pin.textContent = h.label
           pin.dataset.low = String(!!h.lowConfidence)
-          pin.style.top = `${blocks[0].getBoundingClientRect().top - el.getBoundingClientRect().top}px`
+          pin.style.top = `${at.getBoundingClientRect().top - el.getBoundingClientRect().top}px`
           el.appendChild(pin)
         }
       })

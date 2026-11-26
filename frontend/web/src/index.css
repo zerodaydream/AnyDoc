@@ -425,15 +425,68 @@ body {
 .ad-md .ad-md-fm pre {
   margin-top: 0.6em;
 }
+/* Cited block: a wash with an accent bar on its left, swiped in left to right. Drawn on ::before so a list
+   item's bar sits left of its bullet instead of over it. */
 .ad-md .ad-md-hit {
-  background: color-mix(in srgb, var(--evidence) 45%, transparent);
-  box-shadow: -10px 0 0 color-mix(in srgb, var(--evidence) 45%, transparent), -12px 0 0 var(--accent);
-  border-radius: 1px;
-  animation: ad-wash 240ms ease-out;
+  --ad-hit: color-mix(in srgb, var(--evidence) 45%, transparent);
+  --ad-hit-bar: var(--accent);
+  --ad-hit-left: -12px;
+  position: relative;
+  isolation: isolate;
 }
 .ad-md .ad-md-hit[data-low='true'] {
-  background: rgb(212 165 74 / 0.12);
-  box-shadow: -12px 0 0 var(--warn);
+  --ad-hit: rgb(212 165 74 / 0.12);
+  --ad-hit-bar: var(--warn);
+}
+.ad-md li.ad-md-hit {
+  --ad-hit-left: calc(-1.5em - 6px);
+}
+.ad-md .ad-md-hit::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 var(--ad-hit-left);
+  z-index: -1;
+  background: var(--ad-hit);
+  border-left: 2px solid var(--ad-hit-bar);
+  border-radius: 1px;
+  pointer-events: none;
+  animation: ad-swipe 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* Scrolling boxes would clip a pseudo-element hung off their left edge: wash them in place. */
+.ad-md pre.ad-md-hit,
+.ad-md tr.ad-md-hit > * {
+  background-image: linear-gradient(var(--ad-hit), var(--ad-hit));
+  background-repeat: no-repeat;
+  animation: ad-swipe-bg 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ad-md pre.ad-md-hit {
+  box-shadow: inset 2px 0 0 var(--ad-hit-bar);
+}
+.ad-md :is(pre, tr).ad-md-hit::before {
+  content: none;
+}
+@keyframes ad-swipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes ad-swipe-bg {
+  from {
+    background-size: 0% 100%;
+  }
+  to {
+    background-size: 100% 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ad-md .ad-md-hit::before,
+  .ad-md :is(pre, tr).ad-md-hit,
+  .ad-md tr.ad-md-hit > * {
+    animation: none;
+  }
 }
 .ad-md-pin {
   position: absolute;

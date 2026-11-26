@@ -1,6 +1,7 @@
 """Streamed answers with per-segment citation validation (ADR-0002).
 
-Events: meta, text_delta, citation, segment_retracted, done, error.
+Events: meta, text_delta, citation, segment_retracted, suggestion, done, error.
+The suggestion is an uncited next-step hint, sent only for answers that cite something.
 Text streams immediately; a citation is emitted only after it validates; a segment whose
 evidence fails is retracted. Locations come from the IR, never from the model.
 """
@@ -43,6 +44,7 @@ def session_title(question: str, limit: int = 80) -> str:
     return q if len(q) <= limit else q[:limit].rsplit(" ", 1)[0] + "…"
 
 
+_MAX_SUGGESTION = 400
 _ALIAS_REF = re.compile(r"\b[Bb]lock\s+b(\d+)\b")
 
 
@@ -65,6 +67,7 @@ class _State:
     streamed: list[int] = field(default_factory=list)  # chars of text emitted per segment
     verdicts: dict[int, dict[str, Any]] = field(default_factory=dict)  # idx -> {text, citations} | {retracted}
     rejected: int = 0
+    suggestion: str | None = None  # uncited next-step hint; kept only for answers that cite something
 
 
 class AnswerSession:
@@ -101,8 +104,8 @@ class AnswerSession:
             if len(text) > self.s.streamed[i]:
                 out.append(_ev("text_delta", segment=i, text=text[self.s.streamed[i] :]))
                 self.s.streamed[i] = len(text)
-            # A segment is complete once the next one has started.
-            if i < len(segs) - 1 and i not in self.s.verdicts:
+            # A segment is complete once the next one (or the suggestion after the list) has started.
+            if (i < len(segs) - 1 or "suggestion" in obj) and i not in self.s.verdicts:
                 out += self._close(i, seg)
         return out
 
@@ -125,6 +128,10 @@ class AnswerSession:
             status = "partial"
         else:
             status = answer.status
+        tip = " ".join(answer.suggestion.split())[:_MAX_SUGGESTION]
+        if tip and status != "insufficient_evidence":
+            self.s.suggestion = tip
+            out.append(_ev("suggestion", text=tip))
         return status, out
 
 
@@ -323,6 +330,7 @@ async def answer_stream(
                     segments=segments,
                     usage=usage,
                     reasoning="".join(reasoning) or None,
+                    suggestion=session.s.suggestion if error is None and status != "stopped" else None,
                 )
             )
             # Shielded: a stopped (cancelled) request must still record its answer, or the question is left

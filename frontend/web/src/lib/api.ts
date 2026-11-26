@@ -61,6 +61,7 @@ export type MessageOut = {
   status: string
   segments: Segment[]
   reasoning: string | null
+  suggestion?: string | null
   model: string | null
   thinking_level: string | null
   thinking_ms: number | null

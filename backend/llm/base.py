@@ -17,6 +17,10 @@ class Segment(BaseModel):
 class AnswerOut(BaseModel):
     status: Literal["answered", "insufficient_evidence", "conflicting_evidence"]
     segments: list[Segment]
+    suggestion: str = Field(
+        default="",
+        description="optional next step for the reader (a follow-up question or where to look next); no new facts",
+    )
 
 
 Delta = tuple[Literal["thought", "text"], str]

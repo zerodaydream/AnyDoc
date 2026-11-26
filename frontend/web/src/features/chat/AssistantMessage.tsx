@@ -1,4 +1,4 @@
-import { ChevronDown, Square } from 'lucide-react'
+import { ChevronDown, Lightbulb, Square } from 'lucide-react'
 import { useState } from 'react'
 import type { AnswerStatus, Citation, Closest, Segment } from '../../lib/api'
 import { CitationMark, SourceQuote } from '../citations/Citations'
@@ -14,6 +14,7 @@ type Props = {
   route?: LiveAnswer['route']
   blocks?: number
   reasoning?: string | null
+  suggestion?: string | null
   thinkingStartedAt?: number | null
   thinkingMs?: number | null
 }
@@ -21,7 +22,7 @@ type Props = {
 const toCitation = (c: Closest): Citation => ({ ...c, match: 'exact', score: 0, flags: [] })
 const SHOWN = 3
 
-export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0, reasoning, thinkingStartedAt, thinkingMs }: Props) {
+export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0, reasoning, suggestion, thinkingStartedAt, thinkingMs }: Props) {
   const [expanded, setExpanded] = useState(false)
   const streaming = status === 'streaming'
   const segs = numbered(segments)
@@ -107,6 +108,16 @@ export function AssistantMessage({ id, segments, status, closest = [], error, ro
             </button>
           )}
         </div>
+      )}
+
+      {suggestion && hasText && !streaming && (
+        <p className="mt-3 flex gap-2 font-sans text-[14px] leading-[22px] text-muted">
+          <Lightbulb size={15} className="mt-[3px] shrink-0 text-accent" aria-hidden />
+          <span>
+            <span className="sr-only">Suggestion: </span>
+            {suggestion}
+          </span>
+        </p>
       )}
 
       {abstained && closest.length > 0 && (

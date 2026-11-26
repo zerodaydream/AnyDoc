@@ -64,6 +64,7 @@ class MessageOut(BaseModel):
     status: str
     segments: list[dict[str, Any]]
     reasoning: str | None
+    suggestion: str | None = None
     model: str | None
     thinking_level: str | None
     thinking_ms: int | None
@@ -176,6 +177,7 @@ async def history(
             status=m.status,
             segments=m.segments,
             reasoning=m.reasoning,
+            suggestion=m.suggestion,
             model=m.usage.get("model"),
             thinking_level=m.usage.get("thinking_level"),
             thinking_ms=m.usage.get("thinking_ms"),

@@ -61,6 +61,14 @@ export function blocksForLines(root: HTMLElement, from: number, to: number): HTM
   return hits.filter((el) => !hits.some((o) => o !== el && el.contains(o)))
 }
 
+/**
+ * Elements that get the block wash. A fenced code block's line map sits on its inline `<code>`; washing that paints
+ * one strip per line (a file tree looks striped), so the whole `<pre>` is washed as one block instead.
+ */
+export function washTargets(blocks: HTMLElement[]): HTMLElement[] {
+  return [...new Set(blocks.map((b) => b.closest<HTMLElement>('pre') ?? b))]
+}
+
 /** First rendered block at or after `line` (blank lines have no block). */
 export function blockAtLine(root: HTMLElement, line: number): HTMLElement | null {
   const exact = blocksForLines(root, line, line)

@@ -8,7 +8,7 @@ import type { ViewerHandle } from '../core/contract'
 import { DocumentViewer } from '../core/DocumentViewer'
 import { adapters } from '../core/registry'
 import { codePointIndex, decodeText, findAll, lineStarts, markdownLineKinds, marksByLine, pieces } from './text'
-import { blocksForLines, rangeForQuote, renderMarkdown } from './preview'
+import { blocksForLines, rangeForQuote, renderMarkdown, washTargets } from './preview'
 import TextViewer from './TextViewer'
 
 const bytes = (...xs: number[]) => new Uint8Array(xs).buffer
@@ -197,6 +197,17 @@ describe('markdown preview', () => {
     const r = rangeForQuote([el.querySelector('p')!], 'make deploy** with `ENV=prod')
     expect(r?.toString()).toBe('make deploy with ENV=prod')
     expect(rangeForQuote([el.querySelector('p')!], 'not there')).toBeNull()
+    el.remove()
+  })
+
+  it('washes a cited code block as one block and still finds the quoted line', () => {
+    const el = document.createElement('div')
+    el.innerHTML = renderMarkdown('Tree:\n\n```\nsrc/\n  app/\n  schema/   # Runtime schema\n```\n')
+    document.body.appendChild(el)
+    const blocks = blocksForLines(el, 6, 6)
+    expect(blocks.map((b) => b.tagName)).toEqual(['CODE'])
+    expect(washTargets(blocks).map((b) => b.tagName)).toEqual(['PRE'])
+    expect(rangeForQuote(blocks, 'schema/   # Runtime schema')?.toString()).toBe('schema/   # Runtime schema')
     el.remove()
   })
 

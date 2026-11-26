@@ -1,6 +1,7 @@
 import json
 import uuid
-from typing import Any
+from collections.abc import AsyncGenerator
+from typing import Any, cast
 
 import pytest
 
@@ -60,9 +61,11 @@ async def test_upload_ingest_ask_cite(client: Any) -> None:
     assert cite["block_id"].startswith("pdf:1:")  # alias shown to the model mapped back to the real id
     assert cite["location"]["regions"][0]["rects"]
     assert events[-1][1]["status"] == "answered"
+    tip = next(d["text"] for k, d in events if k == "suggestion")
 
     hist = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()
     assert [m["role"] for m in hist] == ["user", "assistant"]
+    assert hist[1]["suggestion"] == tip and hist[0]["suggestion"] is None
     assert hist[1]["segments"][0]["citations"][0]["block_id"] == cite["block_id"]
 
 
@@ -453,7 +456,10 @@ async def test_stopped_answer_is_recorded_without_unverified_text(client: Any) -
     doc = await _ready_doc(client)
     s = get_settings()
     me = Principal(s.local_owner_id, s.local_workspace_id, "local")
-    stream = answer_stream(me, uuid.UUID(doc["sid"]), "What was third quarter revenue?", None, None)
+    stream = cast(
+        AsyncGenerator[dict[str, Any]],
+        answer_stream(me, uuid.UUID(doc["sid"]), "What was third quarter revenue?", None, None),
+    )
     async for e in stream:
         if e["event"] == "text_delta":
             break  # the reader presses Stop while text is streaming, before its citations validate
@@ -462,3 +468,4 @@ async def test_stopped_answer_is_recorded_without_unverified_text(client: Any) -
     hist = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()
     assert [(m["role"], m["status"]) for m in hist] == [("user", "complete"), ("assistant", "stopped")]
     assert hist[1]["segments"] == [] and hist[1]["content"] == ""  # streamed-but-unverified text is not kept
+    assert hist[1]["suggestion"] is None

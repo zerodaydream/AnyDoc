@@ -37,6 +37,14 @@ describe('AssistantMessage', () => {
     expect(container.textContent).toContain('Adam was used to train it.12')
   })
 
+  it('shows the suggestion under a finished answer, not while streaming', () => {
+    const segs = [{ text: 'Q3 revenue was $4.2M.', citations: [cite] }]
+    const { rerender } = render(<AssistantMessage id="m6" status="streaming" segments={segs} suggestion="Ask how costs changed." />)
+    expect(screen.queryByText('Ask how costs changed.')).toBeNull()
+    rerender(<AssistantMessage id="m6" status="answered" segments={segs} suggestion="Ask how costs changed." />)
+    expect(screen.getByText('Ask how costs changed.')).toBeInTheDocument()
+  })
+
   it('shows retracted text as removed, never with a citation', () => {
     render(
       <AssistantMessage id="m2" status="partial" segments={[{ text: 'Made-up claim.', citations: [], retracted: 'no_valid_evidence' }]} />,

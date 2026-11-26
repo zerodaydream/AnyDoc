@@ -50,6 +50,7 @@ class FakeProvider:
                         "evidence": [{"block_id": best[0], "quote": quote}],
                     }
                 ],
+                "suggestion": "You could ask what else this part of the document covers.",
             }
         raw = json.dumps(out)
         for i in range(0, len(raw), 24):
