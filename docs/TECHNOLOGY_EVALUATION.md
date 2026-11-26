@@ -267,3 +267,52 @@ search-grounded calls on gemini-3.5-flash-lite, gemini-3.6-flash and gemini-3.8-
 gemini-3.6-flash succeeded. The key's tier appears to have no search-grounding quota. **Grounded answers, the shape
 of real grounding metadata and the chip's appearance are not yet verified live.** Parsing is tested against SDK
 types; the flow is tested with the fake provider.
+
+---
+
+## D10. Groq as a private, free LLM provider — added 2026-11-27
+
+**Problem.** The owner's Gemini key is free tier, where Google may use prompts and files to improve its products
+and human reviewers may read them ([terms](https://ai.google.dev/gemini-api/terms)). Private documents need a
+provider that does not train on or keep them, at no cost, without losing much speed.
+
+**Options considered.** Gemini paid tier ($5 prepay minimum; the owner is checking this); Groq free tier; local
+models on the 8 GB M2 (about 4B parameters at 4-bit: weak at grounding, slow over long prompts); OpenRouter free,
+Mistral free and NVIDIA trial (training terms vary or allow use); Cloudflare Workers AI (10,000 Neurons/day).
+
+**Selection: Groq**, next to Gemini (a tab per provider in the picker; each request goes to the picked model's
+provider via `backend/llm/router.py`). SDK: `groq` 1.7.0 (Apache-2.0, released 2026-08-26, Python >= 3.10),
+imported only in `backend/llm/providers/groq/`.
+- Data: "By default, Groq does not retain customer data for inference requests"; abuse and debug logs at most 30
+  days; "All customers may enable Zero Data Retention (ZDR)"; stored in US GCP
+  ([your data](https://console.groq.com/docs/your-data)). The page says nothing about training. Third-party
+  write-ups cite the services agreement as forbidding training. **Not verified** from the agreement itself.
+- Models (verified live with the owner's key, 2026-11-27, via `GET /openai/v1/models`): the key can use
+  `qwen/qwen3.8-27b`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b` (131,072 context). Llama 3.1/3.3 are listed as
+  "Enterprise, contact sales" and return 404 for this key. Enabled: Qwen (thinking off by default, low/medium/high
+  on request) and both gpt-oss models (low/medium*/high).
+- Thinking ([reasoning](https://console.groq.com/docs/reasoning)): the level goes in `reasoning_effort`. Live, in JSON
+  mode, all three return their reasoning in `message.reasoning` and count it in
+  `completion_tokens_details.reasoning_tokens`; Qwen without `reasoning_effort` returned no reasoning (7 completion
+  tokens). gpt-oss always reasons (66 reasoning tokens with no parameter), so "Off" hides its reasoning.
+- Structured output: JSON object mode (valid JSON, no schema enforcement); the schema is in the system prompt and the
+  engine validates strictly, as for Gemini. Live, streaming in JSON mode delivered the whole answer as one chunk
+  (124-token answer, 1 chunk), so answers are one non-streamed call.
+- Limits (live, from `x-ratelimit-*` headers and a 413 message): 8,000 tokens and 1,000 requests a minute per model,
+  and "input tokens per minute (ITPM): Limit 7000". Output limits don't count against it. Hence
+  `GROQ_CONTEXT_TOKEN_BUDGET=4000` document tokens per answer, and passage search now trims its results to the budget
+  (best hits first). Live requests used 4,600–5,400 input tokens.
+- SDK quirk (live): `models.retrieve("qwen/qwen3.8-27b")` URL-encodes the "/" and Groq answers 404, so model limits
+  come from one `models.list()` call.
+- Retries: verified in the installed SDK source. `max_retries=4` (5 attempts) on connection errors, 408, 409, 429
+  and 5xx, with exponential backoff from 0.5 s to 8 s plus jitter, honouring `Retry-After` up to 60 s. 498 (flex
+  capacity) maps to `TransientError`, 400 and 413 to a readable error.
+
+**Live results (2026-11-27, the public Attention paper, passage-search route).** Qwen, thinking off: cited, correct
+answer, 0.9 s model time. gpt-oss-120b, low: reasoning shown, cited answer, 1.0 s. Qwen, medium: 10.9 s (most likely a
+rate-limit wait after two earlier requests in the same minute; not confirmed from logs), one unverifiable sentence
+correctly struck through.
+
+**Limitations.** No Google Search web lookup with Groq models. Answers appear at once, not streamed. A 4,000-token
+budget means long documents are answered from fewer passages than with Gemini. Several questions in a minute hit the
+7,000 input-token limit, and the SDK then waits before retrying.

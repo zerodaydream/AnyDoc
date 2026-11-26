@@ -31,6 +31,13 @@
     "gemini-3.5-flash-lite": "minimal*,low,medium,high",
     "gemini-3.1-flash-lite": "minimal*,low,medium,high"
   },
+  "GROQ_ANSWER_MODEL": "qwen/qwen3.8-27b",
+  "GROQ_FAST_MODEL": "qwen/qwen3.8-27b",
+  "GROQ_MODELS_ENABLED": {
+    "qwen/qwen3.8-27b": "off*,low,medium,high",
+    "openai/gpt-oss-120b": "low,medium*,high",
+    "openai/gpt-oss-20b": "low,medium*,high"
+  },
 
   "WEB_SEARCH_ENABLED": true,
 

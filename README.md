@@ -20,11 +20,17 @@ uv run python -m backend.workers     # first start downloads the embedding model
 cd frontend/web && npm install && npm run dev   # http://localhost:5173
 ```
 
-Configuration: secrets and machine-specific values (`GEMINI_API_KEY`, `LANGSMITH_API_KEY`, `DATABASE_URL`, …) go in
+Configuration: secrets and machine-specific values (`GEMINI_API_KEY`, `GROQ_API_KEY`, `LANGSMITH_API_KEY`, `DATABASE_URL`, …) go in
 `.env`; product settings live in `backend/config.json`. That includes `MODELS_ENABLED` (model →
 `"low,medium*,high"`, where `*` marks the default thinking level), `LLM_ANSWER_MODEL` (the default model),
 `WEB_SEARCH_ENABLED`, limits, and tracing on/off. A key set in `.env` or the environment overrides `config.json`.
 Restart the API and worker after editing.
+
+Groq: set `GROQ_API_KEY` in `.env` and the model picker gets a Groq tab next to Gemini (`LLM_PROVIDER=groq` makes it
+the default). Each request goes to the provider of the model picked. Groq models and their thinking levels come from
+`GROQ_MODELS_ENABLED` in `config.json` (`"off*"` makes answering directly the default). Each Groq answer is one
+JSON-mode call, so it appears at once rather than streamed; web lookup needs Gemini. `GROQ_CONTEXT_TOKEN_BUDGET`
+(default 4000) caps the document text per answer, because the free plan allows 7,000 input tokens a minute.
 
 Web lookup (`WEB_SEARCH_ENABLED`): when the document can't answer, or the model says a term needs a web search,
 one Gemini call grounded with Google Search runs. Its answer appears under the document answer as "From the web",
@@ -32,7 +38,7 @@ with source links and Google's search-suggestion chip, and is never mixed into d
 a search query and the document title are sent to Google; document text never is. This needs a key whose tier
 includes search grounding.
 
-The worker uses the Apple GPU (MPS, bf16) when run natively. Startup fails loudly if a configured Gemini model does not exist or the key is invalid; an overloaded model (HTTP 503) only logs a warning.
+The worker uses the Apple GPU (MPS, bf16) when run natively. Startup fails loudly if a configured Gemini or Groq model does not exist or the key is invalid; an overloaded model (HTTP 503) only logs a warning.
 
 ## Run everything in Docker
 
@@ -64,4 +70,4 @@ Results land in `eval/results/`. The bundled set is synthetic (agent-written on 
 `MISSION.md` · `ARCHITECTURE.md` · `docs/TECHNOLOGY_EVALUATION.md` · `docs/DESIGN.md` · `docs/adr/` · `PROGRESS.md`
 
 ## Privacy
-Traces sent to LangSmith hide document text and questions by default (`TRACE_CONTENT=true` opts in, dev test documents only). Embeddings run locally; only the blocks used to answer a question are sent to Gemini. Do not use a Gemini free-tier key with private documents.
+Traces sent to LangSmith hide document text and questions by default (`TRACE_CONTENT=true` opts in, dev test documents only). Embeddings run locally; only the blocks used to answer a question are sent to the LLM provider. Do not use a Gemini free-tier key with private documents: Google may use free-tier content to improve its products. With Groq, enable Zero Data Retention.

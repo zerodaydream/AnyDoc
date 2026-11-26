@@ -99,11 +99,19 @@ async def retrieve(
     chunks = {c.id: c for c in (await session.scalars(select(Chunk).where(Chunk.id.in_(top)))).all()}
     ranked = [bid for cid in top if cid in chunks for bid in chunks[cid].block_ids]
 
-    # Neighbour expansion: +-1 block around every hit, by ordinal.
-    hit_ordinals = (
-        await session.scalars(select(Block.ordinal).where(Block.version_id == version_id, Block.block_id.in_(ranked)))
-    ).all()
-    wanted = {o + d for o in hit_ordinals for d in (-1, 0, 1)}
+    # Neighbour expansion: +-1 block around every hit, by ordinal. A block's rank is (best hit's rank, neighbour?),
+    # so a hit outranks the neighbours that share its rank.
+    rows = await session.execute(
+        select(Block.block_id, Block.ordinal).where(Block.version_id == version_id, Block.block_id.in_(ranked))
+    )
+    ordinal_of = {bid: ordinal for bid, ordinal in rows}
+    rank: dict[int, tuple[int, int]] = {}
+    for i, bid in enumerate(ranked):
+        if bid in ordinal_of:
+            for d in (-1, 0, 1):
+                o = ordinal_of[bid] + d
+                rank[o] = min(rank.get(o, (i, 1)), (i, int(d != 0)))
+    wanted = set(rank)
     blocks = list(
         (
             await session.scalars(
@@ -111,6 +119,15 @@ async def retrieve(
             )
         ).all()
     )
+    # Small budgets (Groq's free plan) can't take every hit: keep the best-ranked blocks that fit, in reading order.
+    if sum(b.token_estimate for b in blocks) > budget_tokens:
+        kept: set[int] = set()
+        used = 0
+        for b in sorted(blocks, key=lambda b: rank[b.ordinal]):
+            if not kept or used + b.token_estimate <= budget_tokens:  # always keep the best hit
+                kept.add(b.ordinal)
+                used += b.token_estimate
+        blocks = [b for b in blocks if b.ordinal in kept]
     trace_metadata(
         route="hybrid",
         total_tokens=total,

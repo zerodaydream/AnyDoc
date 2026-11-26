@@ -82,6 +82,7 @@ export type MessageOut = {
 
 export type ModelInfo = {
   id: string
+  provider: string // the picker tab: gemini | groq
   name: string
   input_token_limit: number | null
   output_token_limit: number | null

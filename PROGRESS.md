@@ -9,6 +9,15 @@ Read this first every session. Update it last.
 - **M3 — TXT/Markdown: built and tested; live Gemini eval baseline still to run.** Owner chose (2026-11-26) to do
   M3 ahead of M2 because M2 is blocked.
 
+## Groq provider + picker tabs (2026-11-27, owner request, uncommitted, not pushed)
+- `GROQ_API_KEY` adds a Groq tab to the model picker next to Gemini; `backend/llm/router.py` sends each request to
+  the picked model's provider. `LLM_PROVIDER` picks the default tab. Gemini flow unchanged.
+- Groq models (config.json `GROQ_MODELS_ENABLED`): qwen/qwen3.8-27b (thinking off by default; "off*" spec, now
+  supported for any model), openai/gpt-oss-120b and -20b (low/medium*/high). Reasoning shows as the thought block.
+- One JSON-mode call per answer; `GROQ_CONTEXT_TOKEN_BUDGET=4000` (free plan: 7,000 input tokens/min); passage
+  search trims to the budget. Verified live with the owner's key (TECHNOLOGY_EVALUATION D10).
+- Tests: `backend/tests/test_groq_provider.py`, `frontend/web/src/features/chat/modelTabs.test.tsx`.
+
 ## Failed answers always get a readable reply (2026-11-27, owner request, uncommitted)
 - Engine: retrieval now runs inside the guarded block, so a question always gets a saved assistant message (it used
   to be left with no reply when retrieval failed). Errors are stored in `usage.error` (our wording only) and

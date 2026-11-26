@@ -196,10 +196,11 @@ async def history(
 async def ask(session_id: uuid.UUID, body: AskIn, p: Principal = Depends(get_principal)) -> StreamingResponse:
     async def sse() -> AsyncIterator[str]:
         s = get_settings()
-        model = body.model or s.llm_answer_model
+        model = body.model or s.default_model
         levels, default = s.thinking_for(model)
-        # Clamp to what this model accepts so the API never sees an unsupported level.
-        thinking = None if body.thinking == "off" else clamp_level((body.thinking or default).lower(), levels)
+        # Clamp to what this model accepts so the API never sees an unsupported level. A model may default to off.
+        chosen = (body.thinking or default).lower()
+        thinking = None if chosen == "off" or not levels else clamp_level(chosen, levels)
         async for e in answer_stream(p, session_id, body.question.strip(), body.model, thinking):
             yield f"event: {e['event']}\ndata: {json.dumps(e['data'], separators=(',', ':'))}\n\n"
 
