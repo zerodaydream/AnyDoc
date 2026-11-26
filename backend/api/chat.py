@@ -69,6 +69,7 @@ class MessageOut(BaseModel):
     model: str | None
     thinking_level: str | None
     thinking_ms: int | None
+    error: str | None = None  # why an answer failed, in the reader's words
     created_at: datetime
 
 
@@ -183,6 +184,8 @@ async def history(
             model=m.usage.get("model"),
             thinking_level=m.usage.get("thinking_level"),
             thinking_ms=m.usage.get("thinking_ms"),
+            error=(m.usage.get("error") or {}).get("message")
+            or ("Something went wrong while answering. Try asking again." if m.status == "error" else None),
             created_at=m.created_at,
         )
         for m in rows

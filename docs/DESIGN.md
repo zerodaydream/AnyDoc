@@ -95,6 +95,16 @@ All text/background pairs are checked to WCAG AA in M1 with an automated contras
   "Front matter · N lines". Images show as dashed alt-text chips (never loaded). Cited block: light evidence wash
   with a clay rule in the margin; the exact quote gets the full `--evidence` wash; pin in the left margin.
 
+## Brand mark (2026-11-27, owner artwork)
+- Owner-supplied artwork lives in `frontend/web/src/components/Logo.tsx`: `Wordmark` (page icon + bold Georgia
+  "AnyDoc", sidebar and mobile top bar) and `LogoMark` (24×24 artwork, shown at 32 px beside answers). Favicon: `public/favicon.svg`.
+- Colours are `--logo-ink / --logo-line / --logo-spark`. Light uses the owner's originals (#29231F, #CDB394, #C97850).
+  Dark lifts them for contrast on charcoal (#EDE7DD, #BFA586, #E08A62).
+- Claude-style answer row: `LogoMark` sits left of every answer, and the answer streams beside it. A new answer draws the
+  page in, then pops the sparkle. While thinking, the sparkle shrinks, swells and turns, and the lines are read in turn.
+  While text streams, it twinkles softly. Once done, it is still. All of this motion answers the user's question.
+  Reduced motion: no animation.
+
 ## The one bold thing: margin notes
 The evidence jump is the product. Clicking citation *n* paints the clay wash over the exact lines **and pins a
 numbered clay tab in the page margin** beside the first line, the same numeral as the pill in the answer, like an

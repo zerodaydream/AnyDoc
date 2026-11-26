@@ -5,7 +5,7 @@ import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from 'react-re
 import { ChatPanel } from '../features/chat/ChatPanel'
 import { Home } from '../features/home/Home'
 import { Sidebar } from '../features/sessions/Sidebar'
-import { Wordmark } from '../features/sessions/Wordmark'
+import { Wordmark } from '../components/Logo'
 import { ProcessingState } from '../features/workspace/ProcessingState'
 import { api, TERMINAL, type SessionOut } from '../lib/api'
 import { useUi } from '../stores/ui'

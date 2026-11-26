@@ -135,3 +135,31 @@ describe('stopped answers', () => {
     expect(screen.queryByText(/Reading the whole document/)).toBeNull()
   })
 })
+
+describe('AnyDoc mark beside the answer', () => {
+  const mark = (c: HTMLElement) => c.querySelector('svg.ad-mark')!
+
+  it('thinks before text, streams with text, rests when done', () => {
+    const { container, rerender } = render(<AssistantMessage id="m" status="streaming" segments={[]} live />)
+    expect(mark(container).getAttribute('data-state')).toBe('thinking')
+    expect(mark(container).hasAttribute('data-enter')).toBe(true)
+    rerender(<AssistantMessage id="m" status="streaming" segments={[{ text: 'Q3 revenue', citations: [] }]} live />)
+    expect(mark(container).getAttribute('data-state')).toBe('streaming')
+    rerender(<AssistantMessage id="m" status="answered" segments={[{ text: 'Q3 revenue.', citations: [] }]} live />)
+    expect(mark(container).getAttribute('data-state')).toBe('idle')
+  })
+
+  it('does not replay the arrival for saved answers', () => {
+    const { container } = render(<AssistantMessage id="m" status="answered" segments={[{ text: 'Done.', citations: [] }]} />)
+    expect(mark(container).hasAttribute('data-enter')).toBe(false)
+  })
+})
+
+describe('failed answers', () => {
+  it('show the mark and a readable error, with no empty answer', () => {
+    const { container } = render(<AssistantMessage id="m" status="error" segments={[]} error="The AI model is busy right now." />)
+    expect(container.querySelector('svg.ad-mark')).not.toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('The AI model is busy right now.')
+    expect(container.querySelector('article > p:not([role=alert])')).toBeNull()
+  })
+})

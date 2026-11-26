@@ -33,7 +33,7 @@ from backend.llm.base import AnswerOut, UnsupportedOption, WebResult, WebSearchU
 from backend.llm.factory import get_llm
 from backend.llm.prompts import SYSTEM, build_prompt
 from backend.observability.tracing import trace_metadata, traced
-from backend.retrieval.retriever import closest_blocks, retrieve
+from backend.retrieval.retriever import Retrieved, closest_blocks, retrieve
 from backend.security.auth import Principal
 
 log = logging.getLogger(__name__)
@@ -157,6 +157,19 @@ async def _web_lookup(
         return WebResult(status="unavailable", query=query, note="Web search failed.")
 
 
+# Shown to the reader as-is, live and in history. Plain words, what happened, what to do next.
+_ERRORS: dict[str, dict[str, str]] = {
+    "llm_busy": {
+        "code": "llm_busy",
+        "message": "The AI model is busy right now. Your question is saved, so try asking again in a moment.",
+    },
+    "answer_failed": {
+        "code": "answer_failed",
+        "message": "Something went wrong while answering. Your question is saved, so try asking again.",
+    },
+}
+
+
 @traced("answer")
 async def answer_stream(
     principal: Principal,
@@ -228,29 +241,9 @@ async def answer_stream(
         )
         await db.commit()
 
-        got = await retrieve(
-            db,
-            principal,
-            version.id,
-            question,
-            get_embedder(),
-            s.full_context_token_budget,
-            s.retrieval_top_k,
-        )
-        # Model sees b0, b1, ...: it truncated long ids like pdf:8:7:38b2d058 in live tests.
-        aliased = [(f"b{i}", b) for i, b in enumerate(got.blocks)]
-        session = AnswerSession({a: _evidence_block(b) for a, b in aliased}, s.quote_fuzzy_min)
+        # Everything after the question is saved runs inside the try below, so every question gets an assistant
+        # message (an answer, a stop, or a readable error), even if retrieval itself fails.
         assistant_id = uuid.uuid4()
-        yield _ev(
-            "meta",
-            message_id=str(assistant_id),
-            user_message_id=str(user_msg.id),
-            route=got.route,
-            model=model or llm.model_id,
-            thinking=thinking,
-            blocks=len(got.blocks),
-        )
-
         usage: dict[str, Any] = {"thinking_level": thinking}
         buf = ""
         reasoning: list[str] = []  # model's thought summaries: shown as reasoning, never as evidence
@@ -258,7 +251,32 @@ async def answer_stream(
         status = "error"
         error: dict[str, str] | None = None
         web: WebResult | None = None
+        got: Retrieved | None = None
+        session = AnswerSession({}, s.quote_fuzzy_min)
+        meta_sent = False
         try:
+            got = await retrieve(
+                db,
+                principal,
+                version.id,
+                question,
+                get_embedder(),
+                s.full_context_token_budget,
+                s.retrieval_top_k,
+            )
+            # Model sees b0, b1, ...: it truncated long ids like pdf:8:7:38b2d058 in live tests.
+            aliased = [(f"b{i}", b) for i, b in enumerate(got.blocks)]
+            session = AnswerSession({a: _evidence_block(b) for a, b in aliased}, s.quote_fuzzy_min)
+            meta_sent = True
+            yield _ev(
+                "meta",
+                message_id=str(assistant_id),
+                user_message_id=str(user_msg.id),
+                route=got.route,
+                model=model or llm.model_id,
+                thinking=thinking,
+                blocks=len(got.blocks),
+            )
             prompt = build_prompt(question, aliased, history)
             for attempt in range(2):
                 # Thinking time = request start to first answer text (summaries often arrive in one late chunk).
@@ -327,22 +345,23 @@ async def answer_stream(
                 session.s.verdicts.setdefault(i, {"retracted": "stopped"})
             log.info("answer_stopped", extra={"document_id": str(doc.id)})
             raise
-        except UnsupportedOption as e:
-            error = {"code": "unsupported_option", "message": f"{e} Pick another model or thinking level."}
-            yield _ev("error", **error)
-        except Exception:  # provider failure: tell the client, keep the user's question
-            log.exception("answer_failed", extra={"document_id": str(doc.id)})
+        except Exception as e:  # tell the client in plain words, keep the user's question
+            if isinstance(e, UnsupportedOption):
+                error = {"code": "unsupported_option", "message": f"{e} Pick another model or thinking level."}
+            else:
+                log.exception("answer_failed", extra={"document_id": str(doc.id)})
+                error = _ERRORS["llm_busy" if isinstance(e, TransientError) else "answer_failed"]
+            if not meta_sent:  # failed before retrieval finished: the client still needs this reply's id
+                yield _ev("meta", message_id=str(assistant_id), user_message_id=str(user_msg.id), route=None, blocks=0)
             # Text already streamed but never validated must not stay on screen as an answer.
             for i in range(len(session.s.streamed)):
                 if i not in session.s.verdicts:
                     session.s.verdicts[i] = {"retracted": "interrupted"}
                     yield _ev("segment_retracted", segment=i, reason="interrupted")
-            error = {
-                "code": "llm_unavailable",
-                "message": "The answer service is unavailable. Try again shortly.",
-            }
             yield _ev("error", **error)
         finally:
+            if error is not None:
+                usage["error"] = error  # our own wording, never document text: history shows it again
             verdicts = session.s.verdicts
             segments = [verdicts[i] for i in sorted(verdicts) if "text" in verdicts[i]]
             db.add(
@@ -369,10 +388,10 @@ async def answer_stream(
             trace_metadata(
                 document_id=str(doc.id),
                 document_version=version.version,
-                route=got.route,
+                route=got.route if got else None,
                 status=status,
                 citations_valid=sum(len(x["citations"]) for x in segments),
                 citations_rejected=session.s.rejected,
                 web_status=web.status if web else None,
-                **{k: v for k, v in usage.items() if k != "model"},
+                **{k: v for k, v in usage.items() if k not in ("model", "error")},
             )

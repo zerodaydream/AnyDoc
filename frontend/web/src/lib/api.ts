@@ -76,6 +76,7 @@ export type MessageOut = {
   model: string | null
   thinking_level: string | null
   thinking_ms: number | null
+  error?: string | null
   created_at: string
 }
 

@@ -9,6 +9,19 @@ Read this first every session. Update it last.
 - **M3 — TXT/Markdown: built and tested; live Gemini eval baseline still to run.** Owner chose (2026-11-26) to do
   M3 ahead of M2 because M2 is blocked.
 
+## Failed answers always get a readable reply (2026-11-27, owner request, uncommitted)
+- Engine: retrieval now runs inside the guarded block, so a question always gets a saved assistant message (it used
+  to be left with no reply when retrieval failed). Errors are stored in `usage.error` (our wording only) and
+  returned as `MessageOut.error`. New wording covers model busy (`llm_busy`) and a general failure (`answer_failed`).
+- UI: an error reply shows the AnyDoc mark + an alert line. Older questions with no saved reply show
+  "No answer was saved for this question. Try asking again."
+- Tests: `test_retrieval_failure_still_saves_a_readable_reply`, busy-message assert, frontend failed-answer test.
+
+## Brand mark + animated answer row (2026-11-27, owner request, uncommitted)
+- Owner's logo and wordmark replace the old mark (`components/Logo.tsx`, theme-aware `--logo-*` tokens, favicon).
+- Answers render beside an animated `LogoMark` (thinking / streaming / idle; draw-in on a new answer). See DESIGN.md.
+- Tests: 2 new in `AssistantMessage.test.tsx`. Verified visually in Brave (dark + light, thinking frames).
+
 ## Gemini retry policy (2026-11-27, owner request, uncommitted)
 - Follows Google's retry guidance: exponential backoff + jitter, only 408/429/5xx and network errors, max 5 attempts.
 - Done with the SDK's own `HttpRetryOptions` (google-genai 3.6.1 retries **only** if `retry_options` is set; verified

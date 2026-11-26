@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, FileText, Square } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { api, type DocumentOut, type MessageOut, type SessionOut } from '../../lib/api'
 import { postSse } from '../../lib/sse'
 import { useUi } from '../../stores/ui'
@@ -118,11 +118,19 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
               )}
             </div>
           )}
-          {messages.map((m) =>
+          {messages.map((m, i) =>
             m.role === 'user' ? (
-              <UserBubble key={m.id} text={m.content} />
+              // A question with no saved reply (older failures): still answer it, so the conversation reads right.
+              messages[i + 1]?.role === 'user' || (i === messages.length - 1 && !live) ? (
+                <Fragment key={m.id}>
+                  <UserBubble text={m.content} />
+                  <AssistantMessage id={`${m.id}:missing`} segments={[]} status="error" error="No answer was saved for this question. Try asking again." />
+                </Fragment>
+              ) : (
+                <UserBubble key={m.id} text={m.content} />
+              )
             ) : (
-              <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} reasoning={m.reasoning} suggestion={m.suggestion} web={m.web} thinkingMs={m.thinking_ms} />
+              <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} reasoning={m.reasoning} suggestion={m.suggestion} web={m.web} thinkingMs={m.thinking_ms} error={m.error} />
             ),
           )}
           {showLive && live && !questionSaved && <UserBubble text={live.question} />}
@@ -141,6 +149,7 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
               webSearching={live.webSearching}
               thinkingStartedAt={live.thinkingStartedAt}
               thinkingMs={live.thinkingMs}
+              live
             />
           )}
           <div ref={end} />

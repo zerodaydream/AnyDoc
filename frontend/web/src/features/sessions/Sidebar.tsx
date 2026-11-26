@@ -5,7 +5,7 @@ import { Tooltip } from '../../components/ui/Tooltip'
 import { api, type SessionOut } from '../../lib/api'
 import { useUi } from '../../stores/ui'
 import { bucket } from './bucket'
-import { Wordmark } from './Wordmark'
+import { Wordmark } from '../../components/Logo'
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions })

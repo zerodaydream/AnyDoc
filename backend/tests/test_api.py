@@ -166,6 +166,24 @@ async def test_stream_failure_retracts_unvalidated_text(client: Any, monkeypatch
     assert ("segment_retracted", {"segment": 0, "reason": "interrupted"}) in events
     assistant = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()[-1]
     assert assistant["status"] == "error" and assistant["segments"] == [] and assistant["content"] == ""
+    assert assistant["error"].startswith("The AI model is busy right now.")
+
+
+async def test_retrieval_failure_still_saves_a_readable_reply(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import engine
+
+    async def broken(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("embedder exploded")
+
+    doc = await _ready_doc(client)
+    monkeypatch.setattr(engine, "retrieve", broken)
+    events = _sse((await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "hi"})).text)
+    assert [k for k, _ in events] == ["meta", "error"]
+    msgs = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()
+    assert [m["role"] for m in msgs] == ["user", "assistant"]  # every question gets a reply
+    assert msgs[1]["id"] == events[0][1]["message_id"] and msgs[1]["status"] == "error"
+    assert msgs[1]["error"] == events[1][1]["message"]
+    assert "embedder" not in msgs[1]["error"]  # internals never reach the reader
 
 
 def test_cors_origins_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
