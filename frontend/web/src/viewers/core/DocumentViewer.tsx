@@ -83,7 +83,7 @@ export function DocumentViewer({ doc }: { doc: DocumentOut }) {
                     className="flex w-full items-baseline gap-3 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-fg hover:bg-surface"
                   >
                     <span className="min-w-0 flex-1 truncate">{o.text}</span>
-                    <span className="shrink-0 tabular-nums text-muted">{o.page}</span>
+                    <span className="shrink-0 tabular-nums text-muted">{o.ref.replace(/^(page|line)s? /, '')}</span>
                   </button>
                 </li>
               ))}
@@ -170,6 +170,23 @@ export function DocumentViewer({ doc }: { doc: DocumentOut }) {
           <button className={btn} onClick={() => handle.current?.zoom('fit-width')} aria-label="Fit to width" title="Fit to width">
             <Maximize2 size={14} />
           </button>
+          {state.modes && (
+            <div role="radiogroup" aria-label="View" className="ml-2 flex h-8 items-center gap-0.5 rounded-lg p-0.5 text-[13px]">
+              {state.modes.map((m) => (
+                <button
+                  key={m.id}
+                  role="radio"
+                  aria-checked={state.mode === m.id}
+                  onClick={() => handle.current?.setMode?.(m.id)}
+                  className={`h-7 rounded-md px-2.5 transition-colors ${
+                    state.mode === m.id ? 'bg-surface font-medium text-fg' : 'text-muted hover:text-fg'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <div className="relative min-h-0 flex-1">
@@ -179,7 +196,7 @@ export function DocumentViewer({ doc }: { doc: DocumentOut }) {
           </p>
         )}
         <Suspense fallback={null}>
-          <Adapter src={doc.file_url} ref={handle} onState={setState} />
+          <Adapter src={doc.file_url} format={doc.format ?? ''} ref={handle} onState={setState} />
         </Suspense>
       </div>
     </section>

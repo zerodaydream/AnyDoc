@@ -5,7 +5,7 @@ from typing import Any
 from backend.document_ir.models import PdfLocation, PdfRegion
 
 
-def locate_pdf(page: int | None, format_metadata: dict[str, Any], start: int, end: int) -> PdfLocation:
+def locate_pdf(content: str, page: int | None, format_metadata: dict[str, Any], start: int, end: int) -> PdfLocation:
     assert page is not None, "PDF blocks always carry a page"
     rects: list[list[float]] = []
     for w_start, w_end, l, b, r, t in format_metadata["words"]:
@@ -23,3 +23,12 @@ def locate_pdf(page: int | None, format_metadata: dict[str, Any], start: int, en
         else:
             rects.append([l, b, r, t])
     return PdfLocation(regions=[PdfRegion(page=page, rects=rects)], char_start=start, char_end=end)
+
+
+def label_pdf(location: dict[str, Any]) -> str:
+    pages = sorted({r["page"] for r in location["regions"]})
+    if len(pages) == 1:
+        return f"page {pages[0]}"
+    if pages == list(range(pages[0], pages[-1] + 1)):
+        return f"pages {pages[0]}–{pages[-1]}"
+    return "pages " + ", ".join(map(str, pages))

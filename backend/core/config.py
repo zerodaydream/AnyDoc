@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     max_upload_mb: int = 100
     max_pages: int = 500
+    max_text_chars: int = 2_000_000  # TXT/MD: roughly 500 pages of prose
     parse_timeout_s: int = 120
     parse_memory_mb: int = 1024
     worker_concurrency: int = 2

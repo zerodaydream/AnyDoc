@@ -13,7 +13,7 @@ from backend.core.config import get_settings
 from backend.core.db import get_sessionmaker
 from backend.core.errors import InvalidFile, TransientError
 from backend.core.models import Block, Chunk, DocumentVersion
-from backend.document_ir.models import ExtractResult
+from backend.document_ir.models import ExtractLimits, ExtractResult
 from backend.extraction.registry import handler_for
 from backend.extraction.sandbox import run_sandboxed
 from backend.indexing.chunker import chunk_blocks
@@ -84,7 +84,7 @@ async def ingest(version_id: uuid.UUID, should_abort: Callable[[], bool] = lambd
                 version_id,
                 "processing",
                 progress=0.1,
-                stage_detail="Reading pages",
+                stage_detail="Reading the file",
                 error_code=None,
                 error_detail=None,
             )
@@ -94,7 +94,7 @@ async def ingest(version_id: uuid.UUID, should_abort: Callable[[], bool] = lambd
                     run_sandboxed,
                     handler.extract,
                     path,
-                    s.max_pages,
+                    ExtractLimits(max_pages=s.max_pages, max_chars=s.max_text_chars),
                     timeout_s=s.parse_timeout_s,
                     mem_mb=s.parse_memory_mb,
                 )

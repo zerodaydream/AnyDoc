@@ -8,6 +8,8 @@ import { toCssBox } from './geometry'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
+const pdfRegions = (l: SourceLocation) => (l.kind === 'pdf' ? l.regions : [])
+
 type PageView = { div: HTMLDivElement; viewport: { convertToViewportPoint(x: number, y: number): ArrayLike<number> } }
 
 export default function PdfViewer({ src, ref, onState }: ViewerProps) {
@@ -25,7 +27,7 @@ export default function PdfViewer({ src, ref, onState }: ViewerProps) {
     if (!view?.div) return
     view.div.querySelectorAll('.ad-hl').forEach((n) => n.remove())
     for (const h of highlights.current) {
-      for (const region of h.location.regions) {
+      for (const region of pdfRegions(h.location)) {
         if (region.page !== pageNumber) continue
         // Margin note: the citation's numeral pinned beside the first line of evidence.
         if (h.label && region.rects.length) {
@@ -49,11 +51,12 @@ export default function PdfViewer({ src, ref, onState }: ViewerProps) {
     }
   }
 
-  const pagesOf = (hs: Highlight[]) => new Set(hs.flatMap((h) => h.location.regions.map((r) => r.page)))
+  const pagesOf = (hs: Highlight[]) => new Set(hs.flatMap((h) => pdfRegions(h.location).map((r) => r.page)))
 
   useImperativeHandle(ref, () => ({
     navigateTo(location: SourceLocation, regionIndex = 0) {
-      const region = location.regions[regionIndex] ?? location.regions[0]
+      const regions = pdfRegions(location)
+      const region = regions[regionIndex] ?? regions[0]
       if (!region || !viewerRef.current) return
       const top = Math.max(...region.rects.map((r) => r[3]))
       const left = Math.min(...region.rects.map((r) => r[0]))

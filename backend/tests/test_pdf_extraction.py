@@ -23,7 +23,7 @@ def test_blocks_headings_and_sections(tmp_path: Path) -> None:
     para = r.blocks[1]
     # Two lines 14pt apart join into one paragraph; the line 46pt lower is a new block.
     assert para.content.startswith("Revenue for the third quarter was $4.2 million, up 12% from the second quarter.")
-    assert len(para.source_location.regions[0].rects) == 2
+    assert para.source_location.kind == "pdf" and len(para.source_location.regions[0].rects) == 2
     assert para.section_path == ["Quarterly Report"]
     outlook = next(b for b in r.blocks if b.content == "Outlook")
     assert outlook.type == "heading"  # bold, body-ish size
@@ -39,7 +39,9 @@ def test_block_ids_are_stable(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("rotate", [0, 90, 180, 270])
 @pytest.mark.parametrize("crop", [None, (50, 60, 562, 732)])
-def test_word_boxes_in_unrotated_user_space(tmp_path: Path, rotate: int, crop: tuple[float, ...] | None) -> None:
+def test_word_boxes_in_unrotated_user_space(
+    tmp_path: Path, rotate: int, crop: tuple[float, float, float, float] | None
+) -> None:
     """Boxes must be PDF user space regardless of /Rotate and /CropBox: pdf.js applies both itself."""
     pdf = make_pdf([Page([Text(100, 500, 12, "Hello world")], rotate=rotate, crop=crop)])
     b = extract_pdf(_write(tmp_path, pdf), 500).blocks[0]
@@ -106,15 +108,17 @@ def test_sandbox_timeout_and_crash() -> None:
 
 
 def test_sandbox_runs_extractor(tmp_path: Path) -> None:
+    from backend.document_ir.models import ExtractLimits
     from backend.extraction.formats.pdf.handler import PdfHandler
 
-    r = run_sandboxed(PdfHandler().extract, _write(tmp_path, sample_report()), 500, timeout_s=60, mem_mb=1024)
+    limits = ExtractLimits(max_pages=500, max_chars=10_000)
+    r = run_sandboxed(PdfHandler().extract, _write(tmp_path, sample_report()), limits, timeout_s=60, mem_mb=1024)
     assert r.page_count == 2
     with pytest.raises(InvalidFile) as e:
         run_sandboxed(
             PdfHandler().extract,
             _write(tmp_path, b"%PDF-1.4 junk", "bad.pdf"),
-            500,
+            limits,
             timeout_s=60,
             mem_mb=1024,
         )

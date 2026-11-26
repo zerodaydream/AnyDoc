@@ -179,3 +179,46 @@ JSON. **Not verified:** which levels each model accepts (owner declined a probe 
 `LLM_THINKING_LEVELS`; a 400 from the API is reported to the user as `unsupported_option` naming the model.
 Thought summaries are model output about the document — stored and shown as reasoning, never used as evidence and
 never logged.
+
+---
+
+## D8. TXT / Markdown (M3) — added 2026-11-26
+
+**Problem.** Turn plain text and Markdown into IR blocks whose locations are exact, and show them so a citation
+lands on the right characters.
+
+**Block structure for Markdown.** Options: a hand-written line scanner; `markdown-it-py`; `mistune`.
+- `markdown-it-py` 4.3.0 (MIT, dependency `mdurl` MIT; licence read from installed package metadata). It is a
+  CommonMark parser, and every block token carries `token.map = [first_line, end_line)`, the source line range it
+  came from. Probed on 2026-11-26 (headings ATX + setext, tight lists with continuation lines, block quotes,
+  fenced + indented code, GFM tables via `.enable("table")`, HTML blocks): every map was correct. Two quirks,
+  both handled: YAML front matter parses as a rule + setext heading (we blank those lines before parsing, which
+  keeps line numbers), and list-item maps include a trailing blank line (we trim whitespace from each span).
+- It was already in `uv.lock` (via `rich` ← `transformers`, only under the `ml` extra), so declaring it as a
+  direct dependency added no download. Selected.
+- Not chosen: a hand-written scanner (re-implements CommonMark edge cases); `mistune` (needs a new download and
+  does not give source line maps for blocks).
+
+**Two views (owner request 2026-11-26: "Preview | Markdown" toggle, Preview by default).**
+- *Markdown* (source): line numbers, cosmetic styling; a citation is a plain character range, exact to the character.
+- *Preview* (rendered): `markdown-it` 15.0.3 (MIT; deps linkify-it, mdurl, uc.micro, punycode.js MIT, entities
+  BSD-2-Clause, argparse Python-2.0 used only by its CLI; ~100 KB, licences read from installed package.json).
+  It is the JS original of markdown-it-py, so `token.map` line ranges match the backend's. Each rendered block
+  carries `data-ls`/`data-le`; a citation washes the innermost blocks overlapping its lines and paints the exact
+  quote with the CSS Custom Highlight API (words matched in order, so Markdown markers in the quote don't matter;
+  block wash only when the words aren't contiguous, e.g. a quote spanning a link URL). Untrusted input: raw HTML
+  escaped (`html: false`), images never fetched (alt text shown), only http(s)/mailto links kept (new tab,
+  `noopener noreferrer nofollow`). Not chosen: `marked` (no block source maps), `react-markdown`/remark (larger,
+  position data per node but a different parser from the backend).
+
+**Encoding.** No `charset-normalizer` (guessing would let the browser and backend disagree). Rule: BOM
+(UTF-8/UTF-16) → strict UTF-8 → strict Windows-1252 → reject. Python's strict `cp1252` rejects the five bytes
+WHATWG maps to C1 controls, so every accepted file decodes to the same string in `TextDecoder`. The same five
+fixtures are tested on both sides (`test_text_extraction.py::test_decode`, `text.test.tsx`).
+
+**Offsets.** Backend offsets are code points (Python `str`). The viewer converts code point → UTF-16 index once
+per document (identity when there are no astral characters). Tested with emoji in both test suites.
+
+**Large text.** Lines render in groups of 200; groups off screen are fixed-height placeholders until an
+`IntersectionObserver` sees them (no virtualisation dependency). Limit `MAX_TEXT_CHARS` = 2,000,000.
+Not measured yet on a 2M-character file.

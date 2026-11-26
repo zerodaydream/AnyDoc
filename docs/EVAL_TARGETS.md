@@ -23,3 +23,10 @@ The single page "miss" (att-10) was a gold-label error: the answer correctly add
 Caveats: one tiny, easy, synthetic set; the full-document route means hybrid retrieval was not exercised. This says the pipeline works end to end, not that accuracy is known.
 
 Metrics that will get targets: retrieval recall@k and MRR · answer correctness · citation location accuracy · citation support · numeric correctness · abstention precision/recall · p50/p95 latency · tokens and cost per question · (M11) WER and word-timing error.
+
+### 2026-11-26 — M3 TXT/Markdown datasets (SYNTHETIC), live baseline pending
+- `eval/datasets/apache_txt_synthetic.jsonl` — 14 questions on the Apache License 2.0 text (11 answerable, 3 unanswerable incl. one prompt-injection).
+- `eval/datasets/zustand_md_synthetic.jsonl` — 13 questions on the zustand v5.1.0 README (11 answerable, 2 unanswerable).
+- Gold locations are 1-based line ranges; `eval/runners/check_gold.py` confirms every gold answer appears inside its gold lines (both pass).
+- The runner now scores **citation location accuracy** (gold pages for PDF, overlapping gold lines for text) and opens a fresh conversation per question.
+- **Not yet run against Gemini**: the agent's session had no API key. The pipeline was exercised end to end with the offline fake model only (scores meaningless, not recorded).

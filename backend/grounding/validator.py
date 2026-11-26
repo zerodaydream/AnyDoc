@@ -6,7 +6,7 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
-from backend.extraction.registry import locate
+from backend.extraction.registry import describe, locate
 from backend.grounding.normalize import normalize
 
 MIN_FUZZY_QUOTE = 12
@@ -91,6 +91,7 @@ class Citation:
     quote: str  # the verbatim span from OUR block text, not the model's string
     page: int | None
     location: dict[str, Any]
+    ref: str  # "page 7", "lines 12–14": derived from location, for people and prompts
     match: str  # exact | normalized | fuzzy
     score: float
     flags: list[str] = field(default_factory=list)
@@ -101,6 +102,7 @@ class Citation:
             "quote": self.quote,
             "page": self.page,
             "location": self.location,
+            "ref": self.ref,
             "match": self.match,
             "score": round(self.score, 1),
             "flags": self.flags,
@@ -166,12 +168,14 @@ def validate_segment(
         flags = []
         if block.confidence is not None and block.confidence < LOW_CONFIDENCE:
             flags.append("low_confidence")
+        location = locate(block.kind, block.content, block.page, block.format_metadata, start, end)
         citations.append(
             Citation(
                 block.block_id,
                 block.content[start:end],
                 block.page,
-                locate(block.kind, block.page, block.format_metadata, start, end),
+                location,
+                describe(location),
                 method,
                 score,
                 flags,

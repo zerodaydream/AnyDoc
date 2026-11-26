@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, FileText, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { api, type DocumentOut, type SessionOut } from '../../lib/api'
+import { api, type DocumentOut, type MessageOut, type SessionOut } from '../../lib/api'
 import { postSse } from '../../lib/sse'
 import { useUi } from '../../stores/ui'
-import { applyEvent, numbered, startAnswer, type LiveAnswer } from './answerReducer'
+import { applyEvent, numbered, startAnswer, stopAnswer, type LiveAnswer } from './answerReducer'
 import { AssistantMessage } from './AssistantMessage'
 import { ModelControls } from './ModelControls'
 import { useModelChoice } from './modelChoice'
@@ -39,13 +39,17 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
       const body = { question: q, model: choice.current?.id, thinking: choice.level }
       await postSse(`/api/sessions/${session.id}/messages`, body, (e) => setLive((a) => (a ? applyEvent(a, e) : a)), abort.current.signal)
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') setLive((a) => a && { ...a, status: 'error', error: 'Connection lost. Try again.' })
+      if ((err as Error).name === 'AbortError') setLive((a) => a && stopAnswer(a))
+      else setLive((a) => a && { ...a, status: 'error', error: 'Connection lost. Try again.' })
     }
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['messages', session.id] }),
       qc.invalidateQueries({ queryKey: ['sessions'] }), // title + recency
     ])
-    setLive((a) => (a && a.status !== 'streaming' && a.status !== 'error' ? null : a))
+    // Hand over to history once the server has the answer; otherwise keep the local one (error, or a stop that
+    // happened before the server started answering).
+    const saved = qc.getQueryData<MessageOut[]>(['messages', session.id]) ?? []
+    setLive((a) => (!a || saved.some((m) => m.id === a.id) ? null : a.status === 'error' || a.status === 'stopped' ? a : null))
   }
 
   // Keyboard: "/" focuses the composer, "[" / "]" step through the latest answer's citations.
@@ -72,6 +76,11 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
 
   const messages = history.data ?? []
   const showLive = live && !(live.id && messages.some((m) => m.id === live.id))
+  // The question is saved as soon as it's asked: never show it twice once history has it.
+  const lastMsg = messages.at(-1)
+  const questionSaved =
+    !!live &&
+    (messages.some((m) => m.id === live.userMessageId) || (lastMsg?.role === 'user' && lastMsg.content === live.question))
   const empty = ready && history.isSuccess && messages.length === 0 && !live
   const starters = starterQuestions(outline.data ?? [])
 
@@ -83,7 +92,8 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
             <div className="pt-[12vh]">
               <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-[13px] text-muted">
                 <FileText size={14} className="text-accent" />
-                {doc.title}, {doc.page_count} {doc.page_count === 1 ? 'page' : 'pages'}
+                {doc.title}
+                {doc.extent && `, ${doc.extent}`}
               </span>
               <p className="mt-5 font-serif text-[28px] leading-[36px] tracking-[-0.01em] text-fg">What would you like to know?</p>
               <p className="mt-2 text-muted">Answers quote the document and link to the exact passage.</p>
@@ -99,7 +109,7 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
                           className="group flex w-full items-baseline gap-3 px-1 py-2.5 text-left hover:bg-surface/50"
                         >
                           <span className="min-w-0 flex-1 truncate font-serif text-[16px] text-fg group-hover:text-accent">{s.label}</span>
-                          <span className="shrink-0 text-[12px] tabular-nums text-muted">p. {s.page}</span>
+                          <span className="shrink-0 text-[12px] tabular-nums text-muted">{s.ref}</span>
                         </button>
                       </li>
                     ))}
@@ -115,7 +125,7 @@ export function ChatPanel({ session, doc }: { session: SessionOut; doc: Document
               <AssistantMessage key={m.id} id={m.id} segments={m.segments} status={m.status} reasoning={m.reasoning} thinkingMs={m.thinking_ms} />
             ),
           )}
-          {showLive && live && <UserBubble text={live.question} />}
+          {showLive && live && !questionSaved && <UserBubble text={live.question} />}
           {showLive && live && (
             <AssistantMessage
               id={live.id ?? 'live'}

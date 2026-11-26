@@ -15,7 +15,8 @@ pytestmark = pytest.mark.usefixtures("database")
 async def _upload(client: Any, data: bytes, name: str = "report.pdf") -> dict[str, Any]:
     r = await client.post("/api/documents", params={"filename": name}, content=data)
     assert r.status_code == 201, r.text
-    return r.json()
+    out: dict[str, Any] = r.json()
+    return out
 
 
 async def _ready_doc(client: Any) -> dict[str, Any]:
@@ -115,6 +116,7 @@ async def test_malformed_pdf_fails_gracefully(client: Any) -> None:
     [
         ("x.pdf", b"PK\x03\x04notpdf", "type_mismatch"),
         ("x.docx", b"%PDF-", "unsupported_format"),
+        ("x.txt", b"", "empty_file"),
         ("x.pdf", b"", "empty_file"),
     ],
 )
@@ -385,3 +387,78 @@ async def test_models_and_ask_use_per_model_levels(client: Any, monkeypatch: pyt
     await client.post(url, json={"question": "revenue?", "model": "capped", "thinking": "minimal"})
     await client.post(url, json={"question": "revenue?", "model": "capped"})
     assert seen == ["high", "low", "medium"]
+
+
+NOTES_MD = (
+    "# Field notes\n\nThe pump station runs on a 48 volt battery bank.\n\n"
+    "## Maintenance\n\nReplace the intake filter every 90 days.\n"
+)
+
+
+async def test_markdown_upload_ingest_ask_cite(client: Any) -> None:
+    doc = await _upload(client, NOTES_MD.encode(), "notes.md")
+    assert doc["format"] == "markdown"
+    await ingest(uuid.UUID(client.enqueued[-1]))
+    doc = (await client.get(f"/api/documents/{doc['id']}")).json()
+    assert doc["status"] == "ready", doc
+    assert doc["page_count"] is None and doc["extent"] == "7 lines"
+
+    r = await client.get(doc["file_url"])
+    assert r.headers["content-type"].startswith("text/markdown") and r.content == NOTES_MD.encode()
+
+    items = (await client.get(f"/api/documents/{doc['id']}/outline")).json()
+    assert [(i["text"], i["ref"]) for i in items] == [("Field notes", "line 1"), ("Maintenance", "line 5")]
+
+    sid = await _session(client, doc["id"])
+    r = await client.post(
+        f"/api/sessions/{sid}/messages", json={"question": "How often is the intake filter replaced?"}
+    )
+    events = _sse(r.text)
+    cite = next(d["citation"] for k, d in events if k == "citation")
+    assert cite["block_id"].startswith("md:7:")
+    assert cite["location"]["kind"] == "text" and cite["ref"] == "line 7" and cite["page"] is None
+    region = cite["location"]["regions"][0]
+    assert NOTES_MD[region["char_start"] : region["char_end"]] == cite["quote"]
+    assert events[-1][1]["status"] == "answered"
+
+
+async def test_text_file_with_binary_content_is_rejected(client: Any) -> None:
+    r = await client.post(
+        "/api/documents", params={"filename": "a.txt"}, content=b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "type_mismatch"
+
+
+async def test_undecodable_text_fails_gracefully(client: Any) -> None:
+    # Passes the head sniff (valid UTF-8 start), fails the full parse test later in the file.
+    doc = await _upload(client, b"fine start\n" * 500 + b"\x81\x8d broken tail", "log.txt")
+    await ingest(uuid.UUID(client.enqueued[-1]))
+    doc = (await client.get(f"/api/documents/{doc['id']}")).json()
+    assert doc["status"] == "failed" and doc["error"]["code"] == "unsupported_encoding"
+
+
+async def test_formats_endpoint(client: Any) -> None:
+    got = (await client.get("/api/formats")).json()
+    assert [(f["name"], f["extensions"]) for f in got] == [
+        ("pdf", [".pdf"]),
+        ("text", [".txt"]),
+        ("markdown", [".md", ".markdown"]),
+    ]
+
+
+async def test_stopped_answer_is_recorded_without_unverified_text(client: Any) -> None:
+    from backend.answering.engine import answer_stream
+    from backend.core.config import get_settings
+
+    doc = await _ready_doc(client)
+    s = get_settings()
+    me = Principal(s.local_owner_id, s.local_workspace_id, "local")
+    stream = answer_stream(me, uuid.UUID(doc["sid"]), "What was third quarter revenue?", None, None)
+    async for e in stream:
+        if e["event"] == "text_delta":
+            break  # the reader presses Stop while text is streaming, before its citations validate
+    await stream.aclose()
+
+    hist = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()
+    assert [(m["role"], m["status"]) for m in hist] == [("user", "complete"), ("assistant", "stopped")]
+    assert hist[1]["segments"] == [] and hist[1]["content"] == ""  # streamed-but-unverified text is not kept

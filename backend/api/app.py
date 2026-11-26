@@ -72,5 +72,6 @@ async def health() -> dict[str, str]:
 
 
 app.include_router(documents.router)
+app.include_router(documents.formats_router)
 app.include_router(chat.router)
 app.include_router(models.router)

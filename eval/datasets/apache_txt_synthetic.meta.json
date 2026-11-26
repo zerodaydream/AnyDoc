@@ -1,0 +1,11 @@
+{
+  "synthetic": true,
+  "format": "text",
+  "note": "Agent-written questions on a public plain-text document, for the M3 TXT smoke baseline. Not a substitute for the owner's evaluation set.",
+  "document": {
+    "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    "filename": "apache-2.0.txt",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  "gold_lines_source": "1-based inclusive line ranges, verified against the file with eval/runners/check_gold.py (2026-11-26)"
+}

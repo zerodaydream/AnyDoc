@@ -34,7 +34,9 @@ def ask(api: httpx.Client, doc_id: str, question: str, tries: int = 3) -> dict[s
     for attempt in range(tries):
         events: list[tuple[str, dict[str, Any]]] = []
         t = time.perf_counter()
-        with api.stream("POST", f"/api/documents/{doc_id}/messages", json={"question": question}, timeout=180) as r:
+        # A fresh conversation per question: answers never see earlier questions.
+        sid = api.post("/api/sessions", json={"document_id": doc_id}).json()["id"]
+        with api.stream("POST", f"/api/sessions/{sid}/messages", json={"question": question}, timeout=180) as r:
             buf = ""
             for chunk in r.iter_text():
                 buf += chunk
@@ -61,7 +63,10 @@ def ask(api: httpx.Client, doc_id: str, question: str, tries: int = 3) -> dict[s
     return {
         "status": last.get("status", "error") if last_kind == "done" else "error",
         "answer": " ".join(t for i, t in sorted(text.items()) if i not in retracted),
-        "citations": [{"page": c["page"], "match": c["match"], "quote": c["quote"][:200]} for c in cites],
+        "citations": [
+            {"ref": c.get("ref"), "location": c["location"], "match": c["match"], "quote": c["quote"][:200]}
+            for c in cites
+        ],
         "retracted": len(retracted),
         "usage": last.get("usage", {}),
         "wall_ms": int((time.perf_counter() - t) * 1000),
@@ -72,13 +77,22 @@ def norm(s: str) -> str:
     return s.casefold().replace(",", "")
 
 
+def at_gold(case: dict[str, Any], location: dict[str, Any]) -> bool:
+    """A citation is in the right place if it lands on a gold page (PDF) or overlaps a gold line range (text)."""
+    if "gold_pages" in case:
+        return all(r["page"] in case["gold_pages"] for r in location["regions"])
+    return all(
+        any(r["line_start"] <= b and r["line_end"] >= a for a, b in case["gold_lines"]) for r in location["regions"]
+    )
+
+
 def score(case: dict[str, Any], res: dict[str, Any]) -> dict[str, Any]:
     answered = res["status"] in ("answered", "partial", "conflicting_evidence") and res["citations"]
     if not case["answerable"]:
         return {"abstain_correct": not answered}
     correct = bool(answered) and all(any(norm(v) in norm(res["answer"]) for v in alts) for alts in case["must_contain"])
-    pages_ok = bool(answered) and all(c["page"] in case["gold_pages"] for c in res["citations"])
-    return {"answer_correct": correct, "citation_pages_ok": pages_ok, "abstained": not answered}
+    located = bool(answered) and all(at_gold(case, c["location"]) for c in res["citations"])
+    return {"answer_correct": correct, "citation_location_ok": located, "abstained": not answered}
 
 
 def main() -> None:
@@ -88,10 +102,10 @@ def main() -> None:
     args = ap.parse_args()
     meta = json.loads(args.dataset.with_suffix(".meta.json").read_text())
     cases = [json.loads(line) for line in args.dataset.read_text().splitlines() if line.strip()]
-    pdf = fetch_document(meta["document"])
+    src = fetch_document(meta["document"])
 
     with httpx.Client(base_url=args.api) as api:
-        doc = api.post("/api/documents", params={"filename": pdf.name}, content=pdf.read_bytes(), timeout=120).json()
+        doc = api.post("/api/documents", params={"filename": src.name}, content=src.read_bytes(), timeout=120).json()
         while doc["status"] not in ("ready", "failed", "cancelled"):
             time.sleep(1)
             doc = api.get(f"/api/documents/{doc['id']}").json()
@@ -108,11 +122,12 @@ def main() -> None:
     model = next((r["usage"].get("model") for r in rows if r["usage"].get("model")), "unknown")
     summary = {
         "dataset": args.dataset.name,
+        "format": meta.get("format", "pdf"),
         "synthetic": meta.get("synthetic", False),
         "model": model,
         "n": len(rows),
         "answer_correct": round(sum(r["answer_correct"] for r in ans) / len(ans), 3),
-        "citation_page_accuracy": round(sum(r["citation_pages_ok"] for r in ans) / len(ans), 3),
+        "citation_location_accuracy": round(sum(r["citation_location_ok"] for r in ans) / len(ans), 3),
         "false_abstain_rate": round(sum(r["abstained"] for r in ans) / len(ans), 3),
         "abstain_correct": round(sum(r["abstain_correct"] for r in una) / max(1, len(una)), 3),
         "errors": sum(r["status"] == "error" for r in rows),

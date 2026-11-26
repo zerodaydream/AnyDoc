@@ -3,7 +3,9 @@
 import re
 from collections.abc import Sequence
 from html import escape
-from typing import Protocol
+from typing import Any, Protocol
+
+from backend.extraction.registry import describe
 
 SYSTEM = """You answer questions about ONE document using ONLY the document blocks provided.
 
@@ -24,7 +26,7 @@ _CLOSE_TAG = re.compile(r"</\s*document_block", re.I)
 
 class PromptBlock(Protocol):
     block_id: str
-    page: int | None
+    source_location: dict[str, Any]
     section_path: list[str]
     content: str
 
@@ -35,7 +37,10 @@ def build_prompt(question: str, blocks: Sequence[tuple[str, PromptBlock]], histo
     for alias, b in blocks:
         section = escape(" > ".join(b.section_path)[:200], quote=True)
         content = _CLOSE_TAG.sub("&lt;/document_block", b.content)
-        parts.append(f'<document_block id="{alias}" page="{b.page}" section="{section}">\n{content}\n</document_block>')
+        where = escape(describe(b.source_location), quote=True)
+        parts.append(
+            f'<document_block id="{alias}" location="{where}" section="{section}">\n{content}\n</document_block>'
+        )
     parts.append("</document>")
     if history:
         parts.append("<conversation_so_far>")

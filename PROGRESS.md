@@ -2,10 +2,57 @@
 
 Read this first every session. Update it last.
 
-## Current state (2026-11-25)
+## Current state (2026-11-26)
 - M0 — done (research, plan; owner answered clarifications).
 - **M1 — Foundation + PDF vertical slice: built and tested, awaiting owner review.**
 - M2 — blocked until the owner supplies evaluation documents in `eval/data/`.
+- **M3 — TXT/Markdown: built and tested; live Gemini eval baseline still to run.** Owner chose (2026-11-26) to do
+  M3 ahead of M2 because M2 is blocked.
+
+## M3 — TXT / Markdown (2026-11-26, uncommitted)
+- Format module `backend/extraction/formats/text/`: decode (BOM → UTF-8 → Windows-1252 → reject, newlines
+  normalised; mirrored in `viewers/text/text.ts`), plain-text paragraphs + conservative heading guesses (ALL CAPS,
+  underlined, short numbered, run-in "2. Title."), Markdown blocks from markdown-it-py `token.map` (front matter,
+  headings with nested section paths, list items, quotes, code, tables). Block content = exact source slice; long
+  blocks split at line/sentence/word boundaries (≤ 2,000 chars). Limit `MAX_TEXT_CHARS` (2,000,000).
+- `TextLocation` (code-point offsets + 1-based lines), locator + label (ADR-0004). One-time generalisation so later
+  formats don't touch chat/citations/upload: citations, closest passages and outline carry `ref` ("lines 12–14");
+  prompt says `location="…"`; handlers declare `label`, `media_type`, `extent()`; `GET /api/formats` drives the
+  upload screen; `DocumentOut.extent` replaces "N pages" in the UI. Old stored citations fall back to `page`.
+- Viewer `viewers/text/TextViewer.tsx`: source sheet, line numbers, Markdown styling, evidence marks + margin pin,
+  ~30% placement, find, zoom, lazily rendered 200-line groups. Registered for `text` and `markdown`.
+- Fixed on the way: eval runner used the removed `/api/documents/{id}/messages` endpoint (now one session per
+  question); upload screen rejected non-PDF files picked before `/api/formats` loaded; chunk prefix uses the
+  deepest heading; markdown-it-py declared directly (it was only transitive via the `ml` extra); `mypy --strict`
+  on tests is clean again. Vite proxy target is `API_URL` (default `http://localhost:8000`).
+- Eval: `apache_txt_synthetic` (14) and `zustand_md_synthetic` (13) with gold line ranges, checked by
+  `eval/runners/check_gold.py`. **Not run against Gemini yet** (no key in the agent session).
+- Tests: backend 87 (25 new: decoding, sniffing, block types, exact offsets incl. emoji, splitting, limits,
+  malformed/binary/undecodable files, sandbox, locator, validator, API upload→ask→cite, formats). Frontend 50
+  (16 new: decode parity, preview sanitising + line anchors + quote matching + toggle, code-point mapping, line marks, Markdown styling, find, viewer highlight/pin/find,
+  citation click-through). E2E `frontend/web/e2e/text-smoke.mjs` green on the Markdown and TXT docs (isolated
+  stack, fake model): pin on the first cited line, marks only on cited lines, evidence in view; dark, light, mobile
+  screenshots reviewed.
+
+- **Markdown Preview (owner request):** "Preview | Markdown" toggle at the viewer toolbar's top right (generic
+  `ViewerState.modes`), Preview default, choice remembered. Rendered with markdown-it 15 (new frontend dep, evidence
+  in TECHNOLOGY_EVALUATION D8), blocks anchored by source line; citations wash the block, paint the exact quote
+  (CSS Highlight API) and pin; find works in both views. Sanitised: no raw HTML, no image loads, only http(s)/mailto
+  links. Verified in Brave on the owner's `freya_workbench_poc` plan file; e2e covers both views.
+
+- **Stop (owner bug report 2026-11-26):** Stop left the answer "streaming" (status line + stop button stayed),
+  showed the question twice once history reloaded, and the server's save was cancelled with the request (question
+  left without an answer). Now: the engine records a `stopped` answer keeping only verified segments, saved in a
+  shielded scope; the UI ends the stream, drops unverified text, shows "Response stopped." and dedupes the question
+  by `user_message_id`. Tests: backend stop-recording, reducer/message, ChatPanel stop flow.
+
+### M3 known limitations
+- Preview highlights are block-level when the quoted words aren't contiguous in rendered text (e.g. a quote that
+  includes a link URL); the Markdown view is always exact. Images in Markdown are never loaded.
+- Plain-text heading detection is heuristic; numbered-list lines of ≤ 6 words can be taken as headings.
+- Wrapped lines in hard-wrapped TXT don't keep their indent.
+- Find is disabled for texts whose lower-casing changes length (rare scripts).
+- Large-file behaviour (2M chars) not measured. Encodings other than UTF-8/UTF-16/Windows-1252 are rejected.
 
 ## Post-M1: model choice + thinking (2026-11-25, owner request, uncommitted per owner)
 - `.env`: `LLM_MODELS` (picker list; `LLM_ANSWER_MODEL` is the default and always included), `LLM_THINKING_LEVELS`,
@@ -102,4 +149,7 @@ Read this first every session. Update it last.
 - OK to build the backend Docker image.
 
 ## Next
-Owner review of M1 + the conversation/UI update, then M2 — retrieval quality, after owner review of M1 and evaluation documents.
+1. Restart the dev worker (it predates M3), then run the TXT/MD baselines against Gemini:
+   `uv run python -m eval.runners.run_eval eval/datasets/apache_txt_synthetic.jsonl` and `…/zustand_md_synthetic.jsonl`,
+   and re-run `attention_synthetic.jsonl` for PDF regressions (prompt now says `location=` instead of `page=`).
+2. Owner review of M1 + M3. 3. M2 once evaluation documents arrive. 4. M4 DOCX after that.

@@ -79,6 +79,22 @@ All text/background pairs are checked to WCAG AA in M1 with an automated contras
 - **Viewer**: Sections menu, typed page jump, evidence-location stepper (multi-region), find, zoom.
 - Mobile (< 900px): top bar with menu + wordmark, Conversation / Document tabs.
 
+## Text viewer (M3, TXT and Markdown)
+- The source itself on a sheet (same hairline edge as PDF pages), with muted line numbers in a gutter. Nothing is
+  reflowed or rendered: a citation is a character range, and the reader sees exactly what was quoted.
+- **Plain text uses JetBrains Mono** (a deliberate exception to "mono only in code"): TXT files rely on
+  fixed-width alignment. Ligatures are off so `=>` stays two characters.
+- **Markdown uses the serif reading voice**; heading lines are larger and semibold, code fences, tables and front
+  matter switch to mono on a `--surface` band, block quotes get a muted rule. Markers (`#`, `-`, `>`) stay visible.
+- Evidence: `--evidence` wash with a 1 px clay underline per marked run; the margin note (numbered clay tab)
+  replaces the line number of the first cited line. Find matches use the warn wash; the current one is outlined.
+- Citations everywhere say where in the format's own words: "Page 7", "Lines 12–14".
+- **Markdown Preview** (default; toggle "Preview | Markdown" at the toolbar's right, remembered per browser):
+  rendered in the serif reading voice on the same sheet, max 860 px; h2 with a hairline rule; inline code as
+  bordered `--surface` chips; code blocks mono, no wrap; tables in the interface face. Front matter folds into
+  "Front matter · N lines". Images show as dashed alt-text chips (never loaded). Cited block: light evidence wash
+  with a clay rule in the margin; the exact quote gets the full `--evidence` wash; pin in the left margin.
+
 ## The one bold thing: margin notes
 The evidence jump is the product. Clicking citation *n* paints the clay wash over the exact lines **and pins a
 numbered clay tab in the page margin** beside the first line, the same numeral as the pill in the answer, like an

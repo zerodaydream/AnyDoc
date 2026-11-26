@@ -23,7 +23,7 @@ def chunk_blocks(blocks: list[IRBlock], max_tokens: int = MAX_CHUNK_TOKENS) -> l
     def flush() -> None:
         nonlocal ids, parts, tokens
         if ids:
-            prefix = f"{section[0]}\n" if section and parts and parts[0] != section[0] else ""
+            prefix = f"{section[-1]}\n" if section and parts and section[-1] not in parts[0] else ""
             chunks.append(ChunkDraft(ids, prefix + "\n".join(parts)))
         ids, parts, tokens = [], [], 0
 

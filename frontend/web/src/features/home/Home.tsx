@@ -10,6 +10,10 @@ export function Home() {
   const qc = useQueryClient()
   const openSession = useUi((s) => s.openSession)
   const docs = useQuery({ queryKey: ['documents'], queryFn: api.listDocuments })
+  const formats = useQuery({ queryKey: ['formats'], queryFn: api.formats, staleTime: Infinity })
+  const extensions = formats.data?.flatMap((f) => f.extensions) ?? []
+  const labels = formats.data?.map((f) => f.label) ?? ['PDF']
+  const kinds = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} or ${labels.at(-1)}` : labels[0]
   const picker = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -32,7 +36,9 @@ export function Home() {
   const take = (file?: File) => {
     setLocalError(null)
     if (!file) return
-    if (!/\.pdf$/i.test(file.name)) return setLocalError(`${file.name} isn’t a PDF. Other formats arrive in later versions.`)
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    // Before the list loads, let the server decide: it validates every upload anyway.
+    if (formats.data && (!file.name.includes('.') || !extensions.includes(ext))) return setLocalError(`${file.name} isn’t a file AnyDoc reads yet. Upload ${kinds}.`)
     if (file.size > MAX_MB * 2 ** 20) return setLocalError(`${file.name} is larger than ${MAX_MB} MB.`)
     upload.mutate(file)
   }
@@ -44,7 +50,7 @@ export function Home() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex max-w-[640px] flex-col px-6 pb-16 pt-[14vh]">
         <h1 className="font-serif text-[34px] leading-[42px] tracking-[-0.015em] text-fg">
-          Ask your PDF. See where every answer comes from.
+          Ask your document. See where every answer comes from.
         </h1>
         <p className="mt-3 max-w-[52ch] text-[16px] leading-[26px] text-muted">
           Each answer is checked against the file and pinned to the exact line it quotes. If the document doesn’t say,
@@ -70,8 +76,10 @@ export function Home() {
             <Upload size={19} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-fg">{busy ? 'Uploading…' : 'Drop a PDF here'}</p>
-            <p className="text-[13px] text-muted">Up to {MAX_MB} MB and 500 pages</p>
+            <p className="text-fg">{busy ? 'Uploading…' : 'Drop a file here'}</p>
+            <p className="text-[13px] text-muted">
+              {kinds}, up to {MAX_MB} MB
+            </p>
           </div>
           <button
             type="button"
@@ -81,7 +89,7 @@ export function Home() {
           >
             Choose file
           </button>
-          <input ref={picker} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => take(e.target.files?.[0])} />
+          <input ref={picker} type="file" accept={extensions.join(',')} hidden onChange={(e) => take(e.target.files?.[0])} />
         </div>
         {error && (
           <p role="alert" className="mt-3 text-danger">
@@ -102,9 +110,7 @@ export function Home() {
                   >
                     <FileText size={17} className="shrink-0 text-muted group-hover:text-accent" />
                     <span className="min-w-0 flex-1 truncate text-fg">{d.title}</span>
-                    <span className="shrink-0 text-[13px] tabular-nums text-muted">
-                      {d.page_count} {d.page_count === 1 ? 'page' : 'pages'}
-                    </span>
+                    <span className="shrink-0 text-[13px] tabular-nums text-muted">{d.extent}</span>
                   </button>
                 </li>
               ))}

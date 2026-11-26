@@ -13,7 +13,7 @@ from backend.core.config import get_settings
 from backend.core.db import session_dep
 from backend.core.errors import Conflict, InvalidFile, NotFound
 from backend.core.models import AuditLog, Block, Document, DocumentVersion
-from backend.extraction.registry import detect
+from backend.extraction.registry import HANDLERS, describe, detect, handler_for
 from backend.ingestion.pipeline import set_state
 from backend.security.auth import Principal, get_principal
 from backend.storage.local import get_storage
@@ -30,6 +30,7 @@ class DocumentOut(BaseModel):
     format: str | None
     size_bytes: int
     page_count: int | None
+    extent: str | None  # size in the format's own unit: "15 pages", "1,240 lines"
     version: int
     status: str
     progress: float
@@ -40,6 +41,7 @@ class DocumentOut(BaseModel):
 
 
 def _out(d: Document, v: DocumentVersion) -> DocumentOut:
+    handler = handler_for(v.detected_format) if v.detected_format else None
     return DocumentOut(
         id=d.id,
         title=d.title,
@@ -47,6 +49,7 @@ def _out(d: Document, v: DocumentVersion) -> DocumentOut:
         format=v.detected_format,
         size_bytes=v.size_bytes,
         page_count=v.page_count,
+        extent=handler.extent(v.page_count, v.meta or {}) if handler else None,
         version=v.version,
         status=v.status,
         progress=v.progress,
@@ -186,7 +189,7 @@ async def get_file(
         # FileResponse serves HTTP Range requests, so pdf.js loads large files progressively.
         return FileResponse(
             path,
-            media_type="application/pdf",
+            media_type=handler_for(v.detected_format or "").media_type,
             filename=v.filename,
             content_disposition_type="inline",
             headers={
@@ -234,6 +237,7 @@ class OutlineItem(BaseModel):
     block_id: str
     text: str
     page: int | None
+    ref: str
     location: dict[str, Any]
 
 
@@ -250,5 +254,27 @@ async def outline(
         .limit(200)
     )
     return [
-        OutlineItem(block_id=b.block_id, text=b.content[:200], page=b.page, location=b.source_location) for b in rows
+        OutlineItem(
+            block_id=b.block_id,
+            text=(b.section_path[-1] if b.section_path else b.content)[:200],
+            page=b.page,
+            ref=describe(b.source_location),
+            location=b.source_location,
+        )
+        for b in rows
     ]
+
+
+class FormatOut(BaseModel):
+    name: str
+    label: str
+    extensions: list[str]
+
+
+formats_router = APIRouter(prefix="/api/formats", tags=["documents"])
+
+
+@formats_router.get("")
+async def formats() -> list[FormatOut]:
+    """What can be uploaded. The upload UI reads this, so a new format needs no frontend change there."""
+    return [FormatOut(name=h.name, label=h.label, extensions=list(h.extensions)) for h in HANDLERS]

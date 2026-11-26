@@ -7,12 +7,22 @@ export type PdfLocation = {
   char_start?: number | null
   char_end?: number | null
 }
-export type SourceLocation = PdfLocation
+/** Code-point offsets into the decoded, newline-normalised text; lines 1-based inclusive. */
+export type TextRegion = { char_start: number; char_end: number; line_start: number; line_end: number }
+export type TextLocation = { kind: 'text'; regions: TextRegion[] }
+export type SourceLocation = PdfLocation | TextLocation
+
+/** Where a citation is, in words: the backend's `ref` ("lines 12–14"); older messages only have a page. */
+export function whereLabel(c: { ref?: string | null; page?: number | null }, capital = false): string {
+  const s = c.ref ?? (c.page != null ? `page ${c.page}` : '')
+  return capital ? s.charAt(0).toUpperCase() + s.slice(1) : s
+}
 
 export type Citation = {
   block_id: string
   quote: string
   page: number | null
+  ref?: string // absent on messages stored before TXT/MD support
   location: SourceLocation
   match: 'exact' | 'normalized' | 'fuzzy'
   score: number
@@ -30,6 +40,7 @@ export type DocumentOut = {
   format: string | null
   size_bytes: number
   page_count: number | null
+  extent: string | null // "15 pages", "1,240 lines"
   version: number
   status: DocStatus
   progress: number
@@ -40,8 +51,8 @@ export type DocumentOut = {
 }
 
 export type Segment = { text: string; citations: Citation[]; retracted?: string }
-export type AnswerStatus = 'answered' | 'partial' | 'insufficient_evidence' | 'conflicting_evidence' | 'error'
-export type Closest = { block_id: string; page: number | null; quote: string; location: SourceLocation }
+export type AnswerStatus = 'answered' | 'partial' | 'insufficient_evidence' | 'conflicting_evidence' | 'error' | 'stopped'
+export type Closest = { block_id: string; page: number | null; ref?: string; quote: string; location: SourceLocation }
 
 export type MessageOut = {
   id: string
@@ -85,7 +96,8 @@ export type SessionOut = {
   updated_at: string
 }
 
-export type OutlineItem = { block_id: string; text: string; page: number | null; location: SourceLocation }
+export type OutlineItem = { block_id: string; text: string; page: number | null; ref: string; location: SourceLocation }
+export type FormatInfo = { name: string; label: string; extensions: string[] }
 
 export class ApiError extends Error {
   code: string
@@ -109,6 +121,7 @@ export const api = {
   listDocuments: () => fetch('/api/documents').then(json<DocumentOut[]>),
   getDocument: (id: string) => fetch(`/api/documents/${id}`).then(json<DocumentOut>),
   models: () => fetch('/api/models').then(json<ModelsOut>),
+  formats: () => fetch('/api/formats').then(json<FormatInfo[]>),
   outline: (id: string) => fetch(`/api/documents/${id}/outline`).then(json<OutlineItem[]>),
   sessions: () => fetch('/api/sessions').then(json<SessionOut[]>),
   createSession: (documentId: string) =>

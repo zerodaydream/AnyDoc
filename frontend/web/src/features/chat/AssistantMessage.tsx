@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Square } from 'lucide-react'
 import { useState } from 'react'
 import type { AnswerStatus, Citation, Closest, Segment } from '../../lib/api'
 import { CitationMark, SourceQuote } from '../citations/Citations'
@@ -78,6 +78,12 @@ export function AssistantMessage({ id, segments, status, closest = [], error, ro
       {segs.some((s) => s.retracted) && !streaming && (
         <p className="mt-2 font-sans text-[13px] text-muted">
           Struck-through text was removed because it couldn’t be verified against the document.
+        </p>
+      )}
+      {status === 'stopped' && (
+        <p className={`flex items-center gap-2 font-sans text-[13px] text-muted ${hasText ? 'mt-2' : ''}`}>
+          <Square size={10} fill="currentColor" aria-hidden />
+          {hasText ? 'Response stopped. Only verified sentences are kept.' : 'Response stopped.'}
         </p>
       )}
       {error && (

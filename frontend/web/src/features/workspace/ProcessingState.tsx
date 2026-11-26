@@ -6,7 +6,7 @@ import { useUi } from '../../stores/ui'
 const STEPS: { label: string; states: string[] }[] = [
   { label: 'Uploading', states: ['pending', 'uploading'] },
   { label: 'Checking file', states: ['uploaded', 'validating', 'queued'] },
-  { label: 'Reading pages', states: ['processing'] },
+  { label: 'Reading the file', states: ['processing'] },
   { label: 'Indexing', states: ['indexing'] },
   { label: 'Ready', states: ['ready'] },
 ]
@@ -54,7 +54,7 @@ export function ProcessingState({ doc }: { doc: DocumentOut }) {
             <span>
               {s.label}
               {i === current && s.label === 'Indexing' && ` (${Math.round(doc.progress * 100)}%)`}
-              {i === current && s.label === 'Reading pages' && doc.page_count ? ` (${doc.page_count} pages)` : ''}
+              {i === current && s.states.includes('processing') && doc.extent ? ` (${doc.extent})` : ''}
             </span>
           </li>
         ))}

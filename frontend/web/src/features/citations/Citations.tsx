@@ -1,4 +1,4 @@
-import type { Citation } from '../../lib/api'
+import { whereLabel, type Citation } from '../../lib/api'
 import { useUi } from '../../stores/ui'
 
 const isLow = (c: Citation) => c.flags.includes('low_confidence')
@@ -12,9 +12,9 @@ export function CitationMark({ id, n, citation }: { id: string; n: number; citat
     <button
       type="button"
       onClick={() => activate(`${id}:${n}`, n, citation)}
-      aria-label={`Citation ${n}, page ${citation.page ?? '?'}`}
+      aria-label={`Citation ${n}, ${whereLabel(citation)}`}
       aria-pressed={active}
-      title={low ? 'Low-confidence text: check the original' : `Page ${citation.page}`}
+      title={low ? 'Low-confidence text: check the original' : whereLabel(citation, true)}
       className={`mx-[3px] inline-flex h-[18px] min-w-[18px] -translate-y-[2px] items-center justify-center rounded-[5px] px-1 align-middle font-sans text-[11px] font-semibold leading-none tabular-nums transition-colors ${
         active
           ? low
@@ -30,7 +30,7 @@ export function CitationMark({ id, n, citation }: { id: string; n: number; citat
   )
 }
 
-/** A verified quote as it appears in the document: clay rule, serif text, page reference. */
+/** A verified quote as it appears in the document: clay rule, serif text, where it is. */
 export function SourceQuote({ id, n, citation }: { id: string; n: number; citation: Citation }) {
   const activate = useUi((s) => s.activate)
   const active = useUi((s) => s.active?.key === `${id}:${n}`)
@@ -53,7 +53,7 @@ export function SourceQuote({ id, n, citation }: { id: string; n: number; citati
       <span className={`min-w-0 flex-1 border-l-2 pl-3 ${low ? 'border-warn/60' : 'border-accent/50'}`}>
         <span className="line-clamp-2 font-serif text-[15px] italic leading-[23px] text-fg/90">{citation.quote}</span>
         <span className="mt-0.5 block font-sans text-[12px] text-muted">
-          Page {citation.page ?? '?'}
+          {whereLabel(citation, true)}
           {citation.location.regions.length > 1 && `, ${citation.location.regions.length} places`}
           {citation.match === 'fuzzy' && ', close match'}
           {low && ', low-confidence text'}

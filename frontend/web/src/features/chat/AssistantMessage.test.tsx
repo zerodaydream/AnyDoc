@@ -63,3 +63,31 @@ describe('AssistantMessage', () => {
     expect(screen.getByRole('button', { name: 'Citation 1, page 4' })).toHaveClass('text-warn')
   })
 })
+
+describe('stopped answers', () => {
+  it('keeps only verified sentences and says the response was stopped', async () => {
+    const { applyEvent, startAnswer, stopAnswer } = await import('./answerReducer')
+    let a = startAnswer('q')
+    for (const e of [
+      { event: 'meta', data: { message_id: 'm9', user_message_id: 'u9' } },
+      { event: 'text_delta', data: { segment: 0, text: 'Revenue was $4.2M.' } },
+      { event: 'citation', data: { segment: 0, index: 0, citation: cite } },
+      { event: 'text_delta', data: { segment: 1, text: 'Half a sentence' } },
+    ])
+      a = applyEvent(a, e)
+    a = stopAnswer(a)
+    expect(a.status).toBe('stopped')
+    expect(a.userMessageId).toBe('u9')
+    expect(a.segments.map((s) => s.text)).toEqual(['Revenue was $4.2M.'])
+    render(<AssistantMessage id="m9" segments={a.segments} status={a.status} />)
+    expect(screen.getByText('Response stopped. Only verified sentences are kept.')).toBeInTheDocument()
+    expect(screen.queryByText(/Half a sentence/)).toBeNull()
+    expect(screen.getByRole('article')).toHaveAttribute('aria-busy', 'false')
+  })
+
+  it('shows a plain note when stopped before any answer', () => {
+    render(<AssistantMessage id="m8" segments={[]} status="stopped" />)
+    expect(screen.getByText('Response stopped.')).toBeInTheDocument()
+    expect(screen.queryByText(/Reading the whole document/)).toBeNull()
+  })
+})

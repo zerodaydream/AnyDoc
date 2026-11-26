@@ -5,6 +5,7 @@ Text streams immediately; a citation is emitted only after it validates; a segme
 evidence fails is retracted. Locations come from the IR, never from the model.
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -13,6 +14,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+import anyio
 from pydantic import ValidationError
 from pydantic_core import from_json
 from sqlalchemy import func, select
@@ -21,6 +23,7 @@ from backend.core.config import get_settings
 from backend.core.db import get_sessionmaker
 from backend.core.errors import TransientError
 from backend.core.models import AuditLog, Block, ChatSession, Document, DocumentVersion, Message
+from backend.extraction.registry import describe
 from backend.grounding.validator import EvidenceBlock, validate_segment
 from backend.indexing.embeddings import get_embedder
 from backend.llm.base import AnswerOut, UnsupportedOption
@@ -43,10 +46,10 @@ def session_title(question: str, limit: int = 80) -> str:
 _ALIAS_REF = re.compile(r"\b[Bb]lock\s+b(\d+)\b")
 
 
-def _page_ref(aliased: list[tuple[str, Block]], m: re.Match[str]) -> str:
-    """Thought summaries mention internal aliases ("Block b130"); show readers a page instead."""
+def _alias_ref(aliased: list[tuple[str, Block]], m: re.Match[str]) -> str:
+    """Thought summaries mention internal aliases ("Block b130"); show readers where the passage is instead."""
     i = int(m.group(1))
-    return f"the passage on page {aliased[i][1].page}" if i < len(aliased) else "a passage"
+    return f"the passage on {describe(aliased[i][1].source_location)}" if i < len(aliased) else "a passage"
 
 
 def _ev(event: str, **data: Any) -> Event:
@@ -235,7 +238,7 @@ async def answer_stream(
                         SYSTEM, prompt, AnswerOut, usage, model=model, thinking=thinking
                     ):
                         if kind == "thought":
-                            delta = _ALIAS_REF.sub(lambda m: _page_ref(aliased, m), delta)
+                            delta = _ALIAS_REF.sub(lambda m: _alias_ref(aliased, m), delta)
                             reasoning.append(delta)
                             yield _ev("thinking_delta", text=delta)
                             continue
@@ -275,12 +278,20 @@ async def answer_stream(
                         {
                             "block_id": b.block_id,
                             "page": b.page,
+                            "ref": describe(b.source_location),
                             "quote": b.content[:240],
                             "location": b.source_location,
                         }
                     )
             usage["total_ms"] = int((time.perf_counter() - started) * 1000)
             yield _ev("done", status=status, usage=usage, closest=closest)
+        except (asyncio.CancelledError, GeneratorExit):
+            # The reader pressed Stop (client disconnected). Keep only what was verified; never show the rest.
+            status = "stopped"
+            for i in range(len(session.s.streamed)):
+                session.s.verdicts.setdefault(i, {"retracted": "stopped"})
+            log.info("answer_stopped", extra={"document_id": str(doc.id)})
+            raise
         except UnsupportedOption as e:
             error = {"code": "unsupported_option", "message": f"{e} Pick another model or thinking level."}
             yield _ev("error", **error)
@@ -314,7 +325,10 @@ async def answer_stream(
                     reasoning="".join(reasoning) or None,
                 )
             )
-            await db.commit()
+            # Shielded: a stopped (cancelled) request must still record its answer, or the question is left
+            # without one in the conversation.
+            with anyio.CancelScope(shield=True):
+                await db.commit()
             trace_metadata(
                 document_id=str(doc.id),
                 document_version=version.version,

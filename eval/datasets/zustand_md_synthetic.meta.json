@@ -1,0 +1,11 @@
+{
+  "synthetic": true,
+  "format": "markdown",
+  "note": "Agent-written questions on a public Markdown README (MIT), for the M3 Markdown smoke baseline. Not a substitute for the owner's evaluation set.",
+  "document": {
+    "url": "https://raw.githubusercontent.com/pmndrs/zustand/v5.1.0/README.md",
+    "filename": "zustand-readme.md",
+    "sha256": "3a53f23dae9f33f7b951cfc6eac1dbdb7def9c722d8f32a70d85190f47d11d5b"
+  },
+  "gold_lines_source": "1-based inclusive line ranges, verified against the file with eval/runners/check_gold.py (2026-11-26)"
+}

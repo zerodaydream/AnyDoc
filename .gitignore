@@ -23,3 +23,5 @@ eval/data/*
 .agents/
 skills-lock.json
 scripts/*.sh
+*.map
+*.js

@@ -3,6 +3,7 @@ import type { SseEvent } from '../../lib/sse'
 
 export type LiveAnswer = {
   id: string | null
+  userMessageId: string | null
   question: string
   segments: Segment[]
   status: AnswerStatus | 'streaming'
@@ -17,6 +18,7 @@ export type LiveAnswer = {
 
 export const startAnswer = (question: string): LiveAnswer => ({
   id: null,
+  userMessageId: null,
   question,
   segments: [],
   status: 'streaming',
@@ -46,6 +48,7 @@ export function applyEvent(a: LiveAnswer, e: SseEvent): LiveAnswer {
       return {
         ...a,
         id: d.message_id as string,
+        userMessageId: (d.user_message_id as string) ?? null,
         route: d.route as LiveAnswer['route'],
         blocks: d.blocks as number,
         // Thinking time runs from the request, not the first summary chunk (often delivered all at once).
@@ -80,6 +83,11 @@ export function applyEvent(a: LiveAnswer, e: SseEvent): LiveAnswer {
     default:
       return a
   }
+}
+
+/** The reader pressed Stop: keep only verified segments (as the server records it), end the stream. */
+export function stopAnswer(a: LiveAnswer): LiveAnswer {
+  return { ...a, status: 'stopped', segments: a.segments.filter((s) => s.citations.length && !s.retracted) }
 }
 
 /** Citation numbers run across a message's segments: 1, 2, 3... */

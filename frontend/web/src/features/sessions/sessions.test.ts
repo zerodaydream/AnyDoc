@@ -15,7 +15,7 @@ describe('conversation recency groups', () => {
 
 describe('starter questions', () => {
   it('come from real headings, skipping title, boilerplate, numbering and repeats', () => {
-    const h = (text: string, page: number) => ({ text, page })
+    const h = (text: string, page: number) => ({ text, ref: `page ${page}` })
     const qs = starterQuestions([
       h('Attention Is All You Need', 1),
       h('Abstract', 1),
@@ -25,8 +25,8 @@ describe('starter questions', () => {
       h('3.2.1 Scaled Dot-Product Attention', 4),
     ])
     expect(qs).toEqual([
-      { label: 'Introduction', page: 2, question: 'What does the section “Introduction” say?' },
-      { label: 'Scaled Dot-Product Attention', page: 4, question: 'What does the section “Scaled Dot-Product Attention” say?' },
+      { label: 'Introduction', ref: 'page 2', question: 'What does the section “Introduction” say?' },
+      { label: 'Scaled Dot-Product Attention', ref: 'page 4', question: 'What does the section “Scaled Dot-Product Attention” say?' },
     ])
   })
 })

@@ -1,0 +1,67 @@
+{
+  "hash": "fe2e6bac",
+  "configHash": "d510903b",
+  "lockfileHash": "3668291c",
+  "browserHash": "834b35bf",
+  "optimized": {
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "e5233275",
+      "needsInterop": true
+    },
+    "@tanstack/react-query": {
+      "src": "../../node_modules/@tanstack/react-query/build/modern/index.js",
+      "file": "@tanstack_react-query.js",
+      "fileHash": "14c5d5bb",
+      "needsInterop": false
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "748bb5ba",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "74cc2814",
+      "needsInterop": true
+    },
+    "lucide-react": {
+      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.mjs",
+      "file": "lucide-react.js",
+      "fileHash": "c6d20bec",
+      "needsInterop": false
+    },
+    "react-resizable-panels": {
+      "src": "../../node_modules/react-resizable-panels/dist/react-resizable-panels.js",
+      "file": "react-resizable-panels.js",
+      "fileHash": "dca0357e",
+      "needsInterop": false
+    },
+    "zustand": {
+      "src": "../../node_modules/zustand/esm/index.mjs",
+      "file": "zustand.js",
+      "fileHash": "e84c544c",
+      "needsInterop": false
+    },
+    "react-dom": {
+      "src": "../../node_modules/react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "20d3d89a",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "chunk-AIXBPO7O": {
+      "file": "chunk-AIXBPO7O.js"
+    },
+    "chunk-2JR6BNAC": {
+      "file": "chunk-2JR6BNAC.js"
+    },
+    "chunk-ZOUFUB3M": {
+      "file": "chunk-ZOUFUB3M.js"
+    }
+  }
+}

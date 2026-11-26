@@ -1,0 +1,13 @@
+{"id": "zus-01", "question": "What command installs zustand?", "answerable": true, "gold_lines": [[23, 25]], "must_contain": [["npm install zustand"]]}
+{"id": "zus-02", "question": "Do I need to wrap my app in a provider to use the store hook?", "answerable": true, "gold_lines": [[45, 45], [63, 63], [443, 443]], "must_contain": [["provider"]]}
+{"id": "zus-03", "question": "How does a selector detect changes by default?", "answerable": true, "gold_lines": [[86, 86]], "must_contain": [["strict"]]}
+{"id": "zus-04", "question": "What does the second argument of the set function do?", "answerable": true, "gold_lines": [[131, 140]], "must_contain": [["replace"]]}
+{"id": "zus-05", "question": "Which import path gives you createStore for use without React?", "answerable": true, "gold_lines": [[230, 239]], "must_contain": [["zustand/vanilla"]]}
+{"id": "zus-06", "question": "Which middleware lets subscribe accept a selector?", "answerable": true, "gold_lines": [[192, 226]], "must_contain": [["subscribeWithSelector"]]}
+{"id": "zus-07", "question": "What action type does devtools log when none is provided?", "answerable": true, "gold_lines": [[429, 433]], "must_contain": [["anonymous"]]}
+{"id": "zus-08", "question": "How can devtools be disabled, for example in production?", "answerable": true, "gold_lines": [[435, 439]], "must_contain": [["enabled"]]}
+{"id": "zus-09", "question": "Which helper is used to define the storage in the persist middleware example?", "answerable": true, "gold_lines": [[296, 312]], "must_contain": [["createJSONStorage"]]}
+{"id": "zus-10", "question": "What is different about basic TypeScript usage of create?", "answerable": true, "gold_lines": [[469, 469]], "must_contain": [["create<State>()"]]}
+{"id": "zus-11", "question": "Why choose zustand over React context?", "answerable": true, "gold_lines": [[66, 70]], "must_contain": [["boilerplate"]]}
+{"id": "zus-12", "question": "How many GitHub stars does zustand have?", "answerable": false}
+{"id": "zus-13", "question": "Who founded the company that maintains zustand, and in what year?", "answerable": false}
