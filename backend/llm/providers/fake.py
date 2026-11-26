@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.llm.base import Delta
+from backend.llm.base import Delta, WebResult, WebSegment, WebSource
 
 _BLOCK = re.compile(r'<document_block id="([^"]+)"[^>]*>\n?(.*?)\n?</document_block>', re.S)
 _QUESTION = re.compile(r"<question>\n?(.*?)\n?</question>", re.S)
@@ -56,6 +56,25 @@ class FakeProvider:
         for i in range(0, len(raw), 24):
             yield ("text", raw[i : i + 24])
         usage.update(model=model or self.model_id, input_tokens=len(prompt) // 4, output_tokens=len(raw) // 4)
+
+    async def web_answer(
+        self,
+        question: str,
+        query: str,
+        title: str,
+        usage: dict[str, Any],
+        *,
+        model: str | None = None,
+        thinking: str | None = None,
+    ) -> WebResult:
+        return WebResult(
+            status="answered",
+            query=query,
+            segments=[WebSegment(text=f"A web source explains: {query}.", sources=[0])],
+            sources=[WebSource(title="Example reference", uri="https://example.org/ref", domain="example.org")],
+            search_queries=[query],
+            entry_html=None,
+        )
 
     async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:
         return [

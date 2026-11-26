@@ -20,8 +20,17 @@ uv run python -m backend.workers     # first start downloads the embedding model
 cd frontend/web && npm install && npm run dev   # http://localhost:5173
 ```
 
-Model choice and thinking: list the models users may pick in `.env` (`LLM_MODELS=a,b,c`; `LLM_ANSWER_MODEL` is the
-default), plus `LLM_THINKING_LEVELS` / `LLM_THINKING_DEFAULT` and `MAX_QUESTION_CHARS`. Restart the API after editing.
+Configuration: secrets and machine-specific values (`GEMINI_API_KEY`, `LANGSMITH_API_KEY`, `DATABASE_URL`, …) go in
+`.env`; product settings live in `backend/config.json`. That includes `MODELS_ENABLED` (model →
+`"low,medium*,high"`, where `*` marks the default thinking level), `LLM_ANSWER_MODEL` (the default model),
+`WEB_SEARCH_ENABLED`, limits, and tracing on/off. A key set in `.env` or the environment overrides `config.json`.
+Restart the API and worker after editing.
+
+Web lookup (`WEB_SEARCH_ENABLED`): when the document can't answer, or the model says a term needs a web search,
+one Gemini call grounded with Google Search runs. Its answer appears under the document answer as "From the web",
+with source links and Google's search-suggestion chip, and is never mixed into document citations. The question,
+a search query and the document title are sent to Google; document text never is. This needs a key whose tier
+includes search grounding.
 
 The worker uses the Apple GPU (MPS, bf16) when run natively. Startup fails loudly if a configured Gemini model does not exist or the key is invalid; an overloaded model (HTTP 503) only logs a warning.
 

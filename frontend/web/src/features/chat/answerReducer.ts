@@ -1,4 +1,4 @@
-import type { AnswerStatus, Citation, Closest, Segment } from '../../lib/api'
+import type { AnswerStatus, Citation, Closest, Segment, WebResult } from '../../lib/api'
 import type { SseEvent } from '../../lib/sse'
 
 export type LiveAnswer = {
@@ -13,6 +13,8 @@ export type LiveAnswer = {
   blocks: number
   reasoning: string
   suggestion: string | null
+  webSearching: string | null
+  web: WebResult | null
   thinkingStartedAt: number | null
   thinkingMs: number | null
 }
@@ -29,6 +31,8 @@ export const startAnswer = (question: string): LiveAnswer => ({
   blocks: 0,
   reasoning: '',
   suggestion: null,
+  webSearching: null,
+  web: null,
   thinkingStartedAt: null,
   thinkingMs: null,
 })
@@ -57,7 +61,7 @@ export function applyEvent(a: LiveAnswer, e: SseEvent): LiveAnswer {
         thinkingStartedAt: d.thinking ? now() : null,
       }
     case 'reset':
-      return { ...a, segments: [], status: 'streaming', reasoning: '', suggestion: null, thinkingStartedAt: a.thinkingStartedAt && now(), thinkingMs: null }
+      return { ...a, segments: [], status: 'streaming', reasoning: '', suggestion: null, webSearching: null, web: null, thinkingStartedAt: a.thinkingStartedAt && now(), thinkingMs: null }
     case 'thinking_delta':
       return { ...a, reasoning: a.reasoning + (d.text as string), thinkingStartedAt: a.thinkingStartedAt ?? now() }
     case 'text_delta': {
@@ -80,6 +84,10 @@ export function applyEvent(a: LiveAnswer, e: SseEvent): LiveAnswer {
     }
     case 'suggestion':
       return { ...a, suggestion: d.text as string }
+    case 'web_searching':
+      return { ...a, webSearching: d.query as string }
+    case 'web':
+      return { ...a, webSearching: null, web: d as unknown as WebResult }
     case 'done':
       return { ...a, status: d.status as AnswerStatus, closest: (d.closest as Closest[]) ?? [] }
     case 'error':
@@ -91,7 +99,7 @@ export function applyEvent(a: LiveAnswer, e: SseEvent): LiveAnswer {
 
 /** The reader pressed Stop: keep only verified segments (as the server records it), end the stream. */
 export function stopAnswer(a: LiveAnswer): LiveAnswer {
-  return { ...a, status: 'stopped', suggestion: null, segments: a.segments.filter((s) => s.citations.length && !s.retracted) }
+  return { ...a, status: 'stopped', suggestion: null, webSearching: null, web: null, segments: a.segments.filter((s) => s.citations.length && !s.retracted) }
 }
 
 /** Citation numbers run across a message's segments: 1, 2, 3... */

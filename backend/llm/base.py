@@ -21,9 +21,40 @@ class AnswerOut(BaseModel):
         default="",
         description="optional next step for the reader (a follow-up question or where to look next); no new facts",
     )
+    web_query: str = Field(
+        default="",
+        description="a precise web search query when the blocks can't fully answer; empty when they do",
+    )
+
+
+class WebSource(BaseModel):
+    title: str
+    uri: str
+    domain: str = ""
+
+
+class WebSegment(BaseModel):
+    text: str
+    sources: list[int]  # indexes into WebResult.sources
+
+
+class WebResult(BaseModel):
+    """A web lookup. Only text the search grounding attributes to a source is kept, like verified segments."""
+
+    status: Literal["answered", "not_found", "unavailable"]
+    query: str
+    segments: list[WebSegment] = []
+    sources: list[WebSource] = []
+    search_queries: list[str] = []
+    entry_html: str | None = None  # Google's search-suggestion chip; must be shown with grounded results
+    note: str | None = None  # why the lookup was unavailable (no content)
 
 
 Delta = tuple[Literal["thought", "text"], str]
+
+
+class WebSearchUnavailable(Exception):
+    """The web lookup failed (quota, outage, model without search grounding). The document answer still stands."""
 
 
 class UnsupportedOption(Exception):
@@ -44,6 +75,19 @@ class LLMProvider(Protocol):
         thinking: str | None = None,
     ) -> AsyncIterator[Delta]:
         """Yield ("thought", text) reasoning summaries and ("text", json) answer deltas conforming to `schema`."""
+        ...
+
+    async def web_answer(
+        self,
+        question: str,
+        query: str,
+        title: str,
+        usage: dict[str, Any],
+        *,
+        model: str | None = None,
+        thinking: str | None = None,
+    ) -> WebResult:
+        """Answer from a web search. Raises WebSearchUnavailable when the lookup itself fails."""
         ...
 
     async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:

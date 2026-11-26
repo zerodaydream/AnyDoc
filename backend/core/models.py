@@ -135,6 +135,7 @@ class Message(Owned, Base):
     usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     reasoning: Mapped[str | None] = mapped_column(Text)  # model thought summaries (not evidence)
     suggestion: Mapped[str | None] = mapped_column(Text)  # uncited next-step hint (not evidence)
+    web: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # web lookup result (not document evidence)
     created_at: Mapped[datetime] = _now()
 
 

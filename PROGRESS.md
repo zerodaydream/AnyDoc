@@ -9,6 +9,15 @@ Read this first every session. Update it last.
 - **M3 — TXT/Markdown: built and tested; live Gemini eval baseline still to run.** Owner chose (2026-11-26) to do
   M3 ahead of M2 because M2 is blocked.
 
+## Gemini retry policy (2026-11-27, owner request, uncommitted)
+- Follows Google's retry guidance: exponential backoff + jitter, only 408/429/5xx and network errors, max 5 attempts.
+- Done with the SDK's own `HttpRetryOptions` (google-genai 3.6.1 retries **only** if `retry_options` is set; verified
+  in `_api_client.retry_args`). Waits ~1/2/4/8 s + ≤1 s jitter, 60 s cap. Hand-rolled loops in
+  `stream_json`, `web_answer`, `check` removed. Stream failures after output starts are not retried by the SDK;
+  they still surface as `TransientError` and the engine resets + restarts once.
+- Tests: `backend/tests/test_gemini_retry.py` (5 attempts on 503, 1 on 400, backoff params).
+- Note: each attempt has its own `LLM_TIMEOUT_S`, so worst case ≈ 5 × timeout + backoff.
+
 ## M3 — TXT / Markdown (2026-11-26, uncommitted)
 - Format module `backend/extraction/formats/text/`: decode (BOM → UTF-8 → Windows-1252 → reject, newlines
   normalised; mirrored in `viewers/text/text.ts`), plain-text paragraphs + conservative heading guesses (ALL CAPS,
@@ -55,6 +64,15 @@ Read this first every session. Update it last.
   fenced code (e.g. file trees) is washed as one `<pre>` block instead of per-line strips, with the quote painted.
   Checked in Brave via a static CSS harness (bullet clearance, single tree block, swipe mid-frame); not yet with live
   Gemini answers.
+
+- **Web lookup + config.json (owner request 2026-11-26):** `backend/config.json` holds product settings
+  (`MODELS_ENABLED` model → levels with `*` default, replacing `LLM_MODELS`/`LLM_MODEL_THINKING`; limits; models;
+  `WEB_SEARCH_ENABLED`; `APP_ENV`; `LANGSMITH_TRACING`; …). `.env` keeps secrets and machine values and overrides
+  config.json, as does any env var (`ANYDOC_CONFIG_FILE=""` disables it in tests). The owner's `.env` was trimmed;
+  the original is at `.env.bak`. Web lookup (D9): the answer schema gets `web_query`; on abstention or a web_query,
+  one Gemini Google-Search-grounded call runs (separate from the schema call) and keeps only attributed text; it is
+  streamed as `web_searching` → `web`, stored in `messages.web` (migration 0005), and shown as "From the web" with
+  sources and a sandboxed Google chip. **Not verified live: the owner's key gets 429 on every grounded call.**
 
 ### M3 known limitations
 - Preview highlights are block-level when the quoted words aren't contiguous in rendered text (e.g. a quote that

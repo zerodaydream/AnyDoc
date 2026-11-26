@@ -1,4 +1,4 @@
-"""Model + thinking options for the composer. Lists come from .env; limits from the provider (no generation)."""
+"""Model + thinking options for the composer. Lists come from backend/config.json (MODELS_ENABLED); limits from the provider (no generation)."""
 
 from typing import Any
 

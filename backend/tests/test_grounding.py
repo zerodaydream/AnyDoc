@@ -210,3 +210,36 @@ def test_reasoning_alias_refs_become_pages() -> None:
     text = "Found it in Block b1, not block b9; b1 alone and β2 stay."
     out = _ALIAS_REF.sub(lambda m: _alias_ref(aliased, m), text)
     assert out == "Found it in the passage on page 7, not a passage; b1 alone and β2 stay."
+
+
+def test_grounded_result_keeps_only_attributed_text() -> None:
+    from google.genai import types
+
+    from backend.llm.providers.gemini.provider import grounded_result
+
+    web = types.GroundingChunkWeb(uri="https://a.example/bleu", title="a.example", domain="a.example")
+    gm = types.GroundingMetadata(
+        grounding_chunks=[types.GroundingChunk(web=web)],
+        grounding_supports=[
+            types.GroundingSupport(
+                segment=types.Segment(start_index=40, text="It scores n-gram overlap."), grounding_chunk_indices=[0]
+            ),
+            types.GroundingSupport(
+                segment=types.Segment(start_index=0, text="BLEU means Bilingual Evaluation Understudy."),
+                grounding_chunk_indices=[0, 7],  # 7 is out of range: dropped
+            ),
+            types.GroundingSupport(
+                segment=types.Segment(start_index=80, text="Unsourced claim."), grounding_chunk_indices=[]
+            ),
+        ],
+        web_search_queries=["BLEU full form"],
+        search_entry_point=types.SearchEntryPoint(rendered_content="<div>chip</div>"),
+    )
+    r = grounded_result("BLEU full form", gm)
+    assert r.status == "answered" and r.entry_html == "<div>chip</div>"
+    assert [(x.text, x.sources) for x in r.segments] == [
+        ("BLEU means Bilingual Evaluation Understudy.", [0]),
+        ("It scores n-gram overlap.", [0]),
+    ]
+    assert grounded_result("q", types.GroundingMetadata()).status == "not_found"
+    assert grounded_result("q", None).status == "not_found"

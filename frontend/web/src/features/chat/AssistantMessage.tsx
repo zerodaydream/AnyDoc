@@ -1,9 +1,10 @@
 import { ChevronDown, Lightbulb, Square } from 'lucide-react'
 import { useState } from 'react'
-import type { AnswerStatus, Citation, Closest, Segment } from '../../lib/api'
+import type { AnswerStatus, Citation, Closest, Segment, WebResult } from '../../lib/api'
 import { CitationMark, SourceQuote } from '../citations/Citations'
 import { numbered, type LiveAnswer } from './answerReducer'
 import { ThinkingBlock } from './ThinkingBlock'
+import { WebAnswer } from './WebAnswer'
 
 type Props = {
   id: string
@@ -15,6 +16,8 @@ type Props = {
   blocks?: number
   reasoning?: string | null
   suggestion?: string | null
+  web?: WebResult | null
+  webSearching?: string | null
   thinkingStartedAt?: number | null
   thinkingMs?: number | null
 }
@@ -22,14 +25,16 @@ type Props = {
 const toCitation = (c: Closest): Citation => ({ ...c, match: 'exact', score: 0, flags: [] })
 const SHOWN = 3
 
-export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0, reasoning, suggestion, thinkingStartedAt, thinkingMs }: Props) {
+export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0, reasoning, suggestion, web, webSearching, thinkingStartedAt, thinkingMs }: Props) {
   const [expanded, setExpanded] = useState(false)
   const streaming = status === 'streaming'
   const segs = numbered(segments)
   const sources = segs.flatMap((s) => (s.retracted ? [] : s.numbered))
-  const abstained = status === 'insufficient_evidence'
   const hasText = segs.some((s) => s.text && !s.retracted)
-  const waiting = streaming && !segs.some((s) => s.text)
+  const webStarted = !!(webSearching || web)
+  // The server only searches the web after the document answer is final, so an empty answer then is an abstention.
+  const abstained = status === 'insufficient_evidence' || (webStarted && !hasText)
+  const waiting = streaming && !segs.some((s) => s.text) && !webStarted
   const thinkingLive = streaming && !!reasoning && thinkingMs == null
 
   return (
@@ -119,6 +124,8 @@ export function AssistantMessage({ id, segments, status, closest = [], error, ro
           </span>
         </p>
       )}
+
+      <WebAnswer web={web} searching={webSearching} />
 
       {abstained && closest.length > 0 && (
         <div className="mt-3 font-sans">

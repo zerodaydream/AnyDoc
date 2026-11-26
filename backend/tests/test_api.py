@@ -264,7 +264,7 @@ async def test_models_endpoint_lists_env_choices(client: Any, monkeypatch: pytes
     from backend.core.config import get_settings
 
     s = get_settings()
-    monkeypatch.setattr(s, "llm_models", ["gemini-x", s.llm_answer_model])
+    monkeypatch.setattr(s, "models_enabled", {"gemini-x": "low,high*", s.llm_answer_model: ""})
     monkeypatch.setattr(s, "llm_thinking_levels", ["LOW", "high"])
     body = (await client.get("/api/models")).json()
     assert [m["id"] for m in body["models"]] == [s.llm_answer_model, "gemini-x"]  # default first, no duplicates
@@ -352,7 +352,7 @@ def test_clamp_level(level: str, supported: list[str], want: str) -> None:
 def test_per_model_thinking_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.core.config import Settings
 
-    monkeypatch.setenv("LLM_MODEL_THINKING", '{"neon": "low,medium,high*,xhigh", "lite": "minimal*,low,medium,high"}')
+    monkeypatch.setenv("MODELS_ENABLED", '{"neon": "low,medium,high*,xhigh", "lite": "minimal*,low,medium,high"}')
     monkeypatch.setenv("LLM_THINKING_LEVELS", "minimal,low,medium,high")  # global list still caps levels
     s = Settings()
     assert s.thinking_for("neon") == (["low", "medium", "high"], "high")
@@ -366,8 +366,7 @@ async def test_models_and_ask_use_per_model_levels(client: Any, monkeypatch: pyt
     from backend.llm.providers.fake import FakeProvider
 
     s = get_settings()
-    monkeypatch.setattr(s, "llm_models", ["capped"])
-    monkeypatch.setattr(s, "llm_model_thinking", {"capped": "low,medium*,high"})
+    monkeypatch.setattr(s, "models_enabled", {"capped": "low,medium*,high"})
     by_id = {m["id"]: m for m in (await client.get("/api/models")).json()["models"]}
     assert by_id["capped"]["thinking_levels"] == ["low", "medium", "high"]
     assert by_id["capped"]["default_thinking"] == "medium"
@@ -469,3 +468,65 @@ async def test_stopped_answer_is_recorded_without_unverified_text(client: Any) -
     assert [(m["role"], m["status"]) for m in hist] == [("user", "complete"), ("assistant", "stopped")]
     assert hist[1]["segments"] == [] and hist[1]["content"] == ""  # streamed-but-unverified text is not kept
     assert hist[1]["suggestion"] is None
+
+
+def test_config_json_is_valid_and_env_overrides_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import _CONFIG_JSON, Settings
+
+    monkeypatch.setenv("ANYDOC_CONFIG_FILE", str(_CONFIG_JSON))
+    s = Settings()
+    assert s.models_enabled and s.llm_answer_model in s.allowed_models
+    for model in s.allowed_models:
+        levels, default = s.thinking_for(model)
+        assert levels and default in levels, model
+    assert isinstance(s.web_search_enabled, bool) and isinstance(s.langsmith_tracing, bool)
+    monkeypatch.setenv("APP_ENV", "staging")  # an env var still wins over config.json
+    assert Settings().app_env == "staging"
+
+
+async def test_web_lookup_runs_when_document_cannot_answer(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import get_settings
+
+    doc = await _ready_doc(client)
+    monkeypatch.setattr(get_settings(), "web_search_enabled", True)
+    r = await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "zebra migration patterns"})
+    events = _sse(r.text)
+    kinds = [k for k, _ in events]
+    assert kinds.index("web_searching") < kinds.index("web") < kinds.index("done")
+    web = dict(events)["web"]
+    assert web["status"] == "answered" and web["query"] == "zebra migration patterns"
+    assert web["segments"][0]["sources"] == [0] and web["sources"][0]["uri"].startswith("https://")
+    assert events[-1][1]["status"] == "insufficient_evidence"  # the document answer is still an abstention
+    assert not any(k == "citation" for k in kinds)  # web text never becomes a document citation
+
+    hist = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()
+    assert hist[1]["web"]["status"] == "answered" and hist[1]["segments"] == []
+
+
+async def test_web_lookup_off_by_flag_and_skipped_when_answered(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import get_settings
+
+    doc = await _ready_doc(client)
+    url = f"/api/sessions/{doc['sid']}/messages"
+    kinds = [k for k, _ in _sse((await client.post(url, json={"question": "zebra migration patterns"})).text)]
+    assert "web_searching" not in kinds  # flag off (the default)
+    monkeypatch.setattr(get_settings(), "web_search_enabled", True)
+    kinds = [k for k, _ in _sse((await client.post(url, json={"question": "What was third quarter revenue?"})).text)]
+    assert "citation" in kinds and "web_searching" not in kinds  # answered from the document, no web query
+
+
+async def test_web_lookup_failure_degrades(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import get_settings
+    from backend.llm.base import WebSearchUnavailable
+    from backend.llm.providers.fake import FakeProvider
+
+    async def quota(*a: Any, **kw: Any) -> Any:
+        raise WebSearchUnavailable("Web search quota is used up for this API key.")
+
+    monkeypatch.setattr(FakeProvider, "web_answer", quota)
+    monkeypatch.setattr(get_settings(), "web_search_enabled", True)
+    doc = await _ready_doc(client)
+    events = _sse((await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "zebra herds"})).text)
+    web = dict(events)["web"]
+    assert web["status"] == "unavailable" and "quota" in web["note"] and web["segments"] == []
+    assert events[-1][0] == "done" and events[-1][1]["status"] == "insufficient_evidence"

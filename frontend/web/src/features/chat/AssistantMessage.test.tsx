@@ -45,6 +45,42 @@ describe('AssistantMessage', () => {
     expect(screen.getByText('Ask how costs changed.')).toBeInTheDocument()
   })
 
+  it('streams a web lookup after an abstention, apart from document citations', async () => {
+    const { applyEvent, startAnswer } = await import('./answerReducer')
+    let a = startAnswer('What does BLEU stand for?')
+    a = applyEvent(a, { event: 'web_searching', data: { query: 'BLEU machine translation full form' } })
+    const { rerender, container } = render(<AssistantMessage id="w1" {...a} />)
+    expect(screen.getByText('The document doesn’t say.')).toBeInTheDocument()
+    expect(screen.getByText(/Searching the web for “BLEU machine translation full form”/)).toBeInTheDocument()
+
+    const web = {
+      status: 'answered' as const,
+      query: 'BLEU machine translation full form',
+      segments: [{ text: 'BLEU stands for Bilingual Evaluation Understudy.', sources: [0] }],
+      sources: [
+        { title: 'Example reference', uri: 'https://example.org/bleu', domain: 'example.org' },
+        { title: 'Unused', uri: 'https://unused.example', domain: 'unused.example' },
+      ],
+      search_queries: [],
+      entry_html: '<div>chip</div>',
+      note: null,
+    }
+    a = applyEvent(applyEvent(a, { event: 'web', data: web }), { event: 'done', data: { status: 'insufficient_evidence' } })
+    rerender(<AssistantMessage id="w1" {...a} />)
+    expect(screen.getByText('BLEU stands for Bilingual Evaluation Understudy.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Example reference/ })).toHaveAttribute('href', 'https://example.org/bleu')
+    expect(screen.queryByText(/Unused/)).toBeNull() // only sources that back a sentence are listed
+    expect(screen.queryByRole('button', { name: /^Citation/ })).toBeNull()
+    const chip = container.querySelector('iframe')!
+    expect(chip.getAttribute('sandbox')).toBe('allow-popups allow-popups-to-escape-sandbox') // no scripts
+  })
+
+  it('explains an unavailable web lookup', () => {
+    const web = { status: 'unavailable' as const, query: 'q', segments: [], sources: [], search_queries: [], entry_html: null, note: 'Web search quota is used up for this API key.' }
+    render(<AssistantMessage id="w2" status="insufficient_evidence" segments={[]} web={web} />)
+    expect(screen.getByText('Web search quota is used up for this API key.')).toBeInTheDocument()
+  })
+
   it('shows retracted text as removed, never with a citation', () => {
     render(
       <AssistantMessage id="m2" status="partial" segments={[{ text: 'Made-up claim.', citations: [], retracted: 'no_valid_evidence' }]} />,

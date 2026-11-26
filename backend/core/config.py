@@ -1,10 +1,12 @@
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import Field, field_validator
+from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, NoDecode, PydanticBaseSettingsSource, SettingsConfigDict
 
 THINKING_ORDER = ["minimal", "low", "medium", "high", "xhigh"]
@@ -16,6 +18,26 @@ def clamp_level(level: str, supported: list[str]) -> str:
         return level
     i = THINKING_ORDER.index(level) if level in THINKING_ORDER else 2
     return min(supported, key=lambda s: (abs(THINKING_ORDER.index(s) - i), THINKING_ORDER.index(s)))
+
+
+# Non-secret product settings (models, feature flags, limits). Secrets and machine-specific values stay in .env.
+_CONFIG_JSON = Path(__file__).resolve().parents[1] / "config.json"
+
+
+class JsonConfigSource(PydanticBaseSettingsSource):
+    """`backend/config.json`, keys in env-var style (`APP_ENV`). ANYDOC_CONFIG_FILE="" disables it (tests)."""
+
+    def __init__(self, settings_cls: type[BaseSettings]) -> None:
+        super().__init__(settings_cls)
+        path = os.environ.get("ANYDOC_CONFIG_FILE", str(_CONFIG_JSON))
+        raw = json.loads(Path(path).read_text(encoding="utf-8")) if path and Path(path).is_file() else {}
+        self._data = {k.lower(): v for k, v in raw.items() if k.lower() in settings_cls.model_fields}
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return self._data.get(field_name), field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return dict(self._data)
 
 
 class Settings(BaseSettings):
@@ -32,7 +54,8 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         # Owner decision: .env is the source of truth locally; a stray shell export must not override it.
-        return init_settings, dotenv_settings, env_settings, file_secret_settings
+        # backend/config.json comes after both, so a deployment can still override any key with an env var.
+        return init_settings, dotenv_settings, env_settings, JsonConfigSource(settings_cls), file_secret_settings
 
     app_env: str = "local"
     data_dir: Path = Path("./var/data")
@@ -54,18 +77,19 @@ class Settings(BaseSettings):
     llm_answer_model: str = "gemini-3.8-flash"
     llm_fast_model: str = "gemini-3.5-flash-lite"
     llm_timeout_s: float = 120.0
-    # User-selectable options (comma-separated in .env). The answer model is the default and is always allowed.
-    llm_models: Annotated[list[str], NoDecode] = []
+    # Models users may pick, with their thinking levels: {"model": "low,medium,high*"} ("*" marks that model's
+    # default). The answer model is the default and is always allowed.
+    models_enabled: dict[str, str] = {}
     llm_thinking_levels: Annotated[list[str], NoDecode] = ["minimal", "low", "medium", "high", "xhigh"]
-    llm_thinking_default: str = "medium"
-    # Per-model levels, JSON: {"model": "low,medium,high*"} ("*" marks that model's default). Unlisted models get
-    # all LLM_THINKING_LEVELS and LLM_THINKING_DEFAULT.
-    llm_model_thinking: dict[str, str] = {}
+    llm_thinking_default: str = "medium"  # for a model not in MODELS_ENABLED (or listed without a "*")
     max_question_chars: int = 4000
     full_context_token_budget: int = 120_000
     retrieval_top_k: int = 8
     quote_fuzzy_min: float = Field(90.0, ge=50, le=100)
     history_turns: int = 6
+    # Web lookup (Gemini Google Search grounding) when the document can't answer. Sends the question and a search
+    # query (never document text) to Google; off unless config.json or env turns it on.
+    web_search_enabled: bool = False
 
     embed_provider: str = "local"
     embed_model: str = "microsoft/harrier-oss-v1-270m"
@@ -78,14 +102,14 @@ class Settings(BaseSettings):
     langsmith_project: str = "anydoc-local"
     trace_content: bool = False
 
-    @field_validator("cors_origins", "llm_models", "llm_thinking_levels", mode="before")
+    @field_validator("cors_origins", "llm_thinking_levels", mode="before")
     @classmethod
     def _split_list(cls, v: object) -> object:
         return [o.strip() for o in v.split(",") if o.strip()] if isinstance(v, str) else v
 
     @property
     def allowed_models(self) -> list[str]:
-        return list(dict.fromkeys([self.llm_answer_model, *self.llm_models]))
+        return list(dict.fromkeys([self.llm_answer_model, *self.models_enabled]))
 
     @property
     def thinking_levels(self) -> list[str]:
@@ -93,7 +117,7 @@ class Settings(BaseSettings):
 
     def thinking_for(self, model: str) -> tuple[list[str], str]:
         """(levels this model accepts, its default), in canonical order and within LLM_THINKING_LEVELS."""
-        spec = self.llm_model_thinking.get(model)
+        spec = self.models_enabled.get(model)
         if spec is None:
             levels, default = self.thinking_levels, self.llm_thinking_default.lower()
         else:

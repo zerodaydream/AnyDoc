@@ -1,7 +1,9 @@
 """Streamed answers with per-segment citation validation (ADR-0002).
 
-Events: meta, text_delta, citation, segment_retracted, suggestion, done, error.
+Events: meta, text_delta, citation, segment_retracted, suggestion, web_searching, web, done, error.
 The suggestion is an uncited next-step hint, sent only for answers that cite something.
+When the document can't answer (or the model asks for a web query) and WEB_SEARCH_ENABLED is on, one grounded web
+lookup runs; its result is a separate `web` event, never mixed into the document answer or its citations.
 Text streams immediately; a citation is emitted only after it validates; a segment whose
 evidence fails is retracted. Locations come from the IR, never from the model.
 """
@@ -27,7 +29,7 @@ from backend.core.models import AuditLog, Block, ChatSession, Document, Document
 from backend.extraction.registry import describe
 from backend.grounding.validator import EvidenceBlock, validate_segment
 from backend.indexing.embeddings import get_embedder
-from backend.llm.base import AnswerOut, UnsupportedOption
+from backend.llm.base import AnswerOut, UnsupportedOption, WebResult, WebSearchUnavailable
 from backend.llm.factory import get_llm
 from backend.llm.prompts import SYSTEM, build_prompt
 from backend.observability.tracing import trace_metadata, traced
@@ -45,6 +47,7 @@ def session_title(question: str, limit: int = 80) -> str:
 
 
 _MAX_SUGGESTION = 400
+_MAX_WEB_QUERY = 300
 _ALIAS_REF = re.compile(r"\b[Bb]lock\s+b(\d+)\b")
 
 
@@ -68,6 +71,7 @@ class _State:
     verdicts: dict[int, dict[str, Any]] = field(default_factory=dict)  # idx -> {text, citations} | {retracted}
     rejected: int = 0
     suggestion: str | None = None  # uncited next-step hint; kept only for answers that cite something
+    web_query: str = ""  # model's search query for what the blocks couldn't answer
 
 
 class AnswerSession:
@@ -128,11 +132,29 @@ class AnswerSession:
             status = "partial"
         else:
             status = answer.status
+        self.s.web_query = " ".join(answer.web_query.split())[:_MAX_WEB_QUERY]
         tip = " ".join(answer.suggestion.split())[:_MAX_SUGGESTION]
         if tip and status != "insufficient_evidence":
             self.s.suggestion = tip
             out.append(_ev("suggestion", text=tip))
         return status, out
+
+
+async def _web_lookup(
+    llm: Any, question: str, query: str, title: str, usage: dict[str, Any], model: str, thinking: str | None
+) -> WebResult:
+    """Fast: the model's cheapest enabled thinking level. Failures degrade to `unavailable`, never an error."""
+    levels, _ = get_settings().thinking_for(model)
+    try:
+        result: WebResult = await llm.web_answer(
+            question, query, title, usage, model=model, thinking=(levels[0] if thinking and levels else None)
+        )
+        return result
+    except WebSearchUnavailable as e:
+        return WebResult(status="unavailable", query=query, note=str(e))
+    except Exception:
+        log.exception("web_lookup_failed")
+        return WebResult(status="unavailable", query=query, note="Web search failed.")
 
 
 @traced("answer")
@@ -235,6 +257,7 @@ async def answer_stream(
         think_started: float | None = None
         status = "error"
         error: dict[str, str] | None = None
+        web: WebResult | None = None
         try:
             prompt = build_prompt(question, aliased, history)
             for attempt in range(2):
@@ -290,6 +313,11 @@ async def answer_stream(
                             "location": b.source_location,
                         }
                     )
+            if s.web_search_enabled and (status == "insufficient_evidence" or session.s.web_query):
+                query = session.s.web_query or " ".join(question.split())[:_MAX_WEB_QUERY]
+                yield _ev("web_searching", query=query)
+                web = await _web_lookup(llm, question, query, doc.title, usage, model or llm.model_id, thinking)
+                yield _ev("web", **web.model_dump())
             usage["total_ms"] = int((time.perf_counter() - started) * 1000)
             yield _ev("done", status=status, usage=usage, closest=closest)
         except (asyncio.CancelledError, GeneratorExit):
@@ -331,6 +359,7 @@ async def answer_stream(
                     usage=usage,
                     reasoning="".join(reasoning) or None,
                     suggestion=session.s.suggestion if error is None and status != "stopped" else None,
+                    web=web.model_dump() if web is not None and status != "stopped" else None,
                 )
             )
             # Shielded: a stopped (cancelled) request must still record its answer, or the question is left
@@ -344,5 +373,6 @@ async def answer_stream(
                 status=status,
                 citations_valid=sum(len(x["citations"]) for x in segments),
                 citations_rejected=session.s.rejected,
+                web_status=web.status if web else None,
                 **{k: v for k, v in usage.items() if k != "model"},
             )

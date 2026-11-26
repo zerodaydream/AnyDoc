@@ -222,3 +222,48 @@ per document (identity when there are no astral characters). Tested with emoji i
 **Large text.** Lines render in groups of 200; groups off screen are fixed-height placeholders until an
 `IntersectionObserver` sees them (no virtualisation dependency). Limit `MAX_TEXT_CHARS` = 2,000,000.
 Not measured yet on a 2M-character file.
+
+## D9. Web lookup for questions the document can't answer — added 2026-11-26
+
+**Problem (owner request).** Example: the Attention paper uses "BLEU" without expanding it, so the document-grounded
+answer correctly abstains. The owner wants a factual web answer in that case, triggered automatically when the
+document can't answer or when the model says a search is needed.
+
+**Options.** (a) Gemini built-in Grounding with Google Search; (b) a separate search API (Tavily, Brave, SerpAPI)
+plus our own fetch-and-summarise step; (c) a multi-step agent (plan → search → read → write).
+- (a) Selected. No new dependency or key (google-genai 3.6.1 already has `types.Tool(google_search=…)` and
+  `GroundingMetadata` with `grounding_chunks`, `grounding_supports`, `web_search_queries`, `search_entry_point`;
+  checked in the installed package). Provider code stays in `backend/llm/providers/gemini/`. One request.
+- (b) Not chosen: new vendor, key and dependency, and we would have to write the source attribution ourselves.
+- (c) Not chosen: several model calls and seconds of extra latency to look up a definition.
+
+**Design.**
+- The document answer is unchanged and always comes first. The answer schema gets an optional `web_query`; a search
+  runs when the status is `insufficient_evidence` or `web_query` is set. If the model gives no query, the
+  question is used.
+- A **separate** call with no response schema. Combining search with structured output is officially supported on
+  Gemini 3, but developers report empty grounding metadata and text starting mid-sentence
+  ([forum 1](https://discuss.ai.google.dev/t/grounding-metadata-grounding-chunks-grounding-supports-empty-when-using-structured-output-with-google-search-tool/113240),
+  [forum 2](https://discuss.ai.google.dev/t/google-search-grounding-drops-the-beginning-of-the-response-text-gemini-3-5-3-6-flash-json-output-starts-mid-sentence/176967)).
+- Factuality: the web prompt requires authoritative sources, no answers from memory, the meaning used in the
+  document's field, and a fixed "couldn't find a reliable answer" reply. The backend keeps **only text that
+  `grounding_supports` attributes to a web source**; unattributed text is dropped, and no attributed text means
+  `not_found`. This mirrors how document segments are kept only when verified.
+- Speed: the request's model at its cheapest enabled thinking level.
+- Display: a separate "From the web · not from your document" section with source links. Google requires the
+  search-suggestion chip (`search_entry_point.rendered_content`) to be shown
+  ([docs](https://ai.google.dev/gemini-api/docs/grounding/search-suggestions)); it is third-party HTML, so it is
+  rendered in a sandboxed iframe (no scripts).
+- Privacy: the question, the search query and the document title go to Google; document text does not. The
+  feature flag `WEB_SEARCH_ENABLED` lives in `backend/config.json`, and the code default is off.
+- Failure: a 429/5xx or other error yields `unavailable` with a short note; the document answer is unaffected.
+
+**Pricing.** Gemini 3 bills per search query the model runs
+([docs](https://ai.google.dev/gemini-api/docs/google-search)). Rates found in forum posts conflict. **Not
+verified**: check the pricing page.
+
+**Verified / not verified (2026-11-26).** A live probe with the owner's key returned `429 RESOURCE_EXHAUSTED` for
+search-grounded calls on gemini-3.5-flash-lite, gemini-3.6-flash and gemini-3.8-flash, while a plain call on
+gemini-3.6-flash succeeded. The key's tier appears to have no search-grounding quota. **Grounded answers, the shape
+of real grounding metadata and the chip's appearance are not yet verified live.** Parsing is tested against SDK
+types; the flow is tested with the fake provider.

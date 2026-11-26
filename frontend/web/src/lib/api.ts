@@ -54,6 +54,16 @@ export type Segment = { text: string; citations: Citation[]; retracted?: string 
 export type AnswerStatus = 'answered' | 'partial' | 'insufficient_evidence' | 'conflicting_evidence' | 'error' | 'stopped'
 export type Closest = { block_id: string; page: number | null; ref?: string; quote: string; location: SourceLocation }
 
+export type WebResult = {
+  status: 'answered' | 'not_found' | 'unavailable'
+  query: string
+  segments: { text: string; sources: number[] }[]
+  sources: { title: string; uri: string; domain: string }[]
+  search_queries: string[]
+  entry_html: string | null
+  note: string | null
+}
+
 export type MessageOut = {
   id: string
   role: 'user' | 'assistant'
@@ -62,6 +72,7 @@ export type MessageOut = {
   segments: Segment[]
   reasoning: string | null
   suggestion?: string | null
+  web?: WebResult | null
   model: string | null
   thinking_level: string | null
   thinking_ms: number | null
