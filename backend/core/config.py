@@ -72,16 +72,24 @@ class Settings(BaseSettings):
     parse_memory_mb: int = 1024
     worker_concurrency: int = 2
 
-    llm_provider: str = "gemini"
+    llm_provider: str = "gemini"  # default picker tab: gemini | groq; "fake" forces the offline model
     gemini_api_key: str = ""
+    groq_api_key: str = ""
     llm_answer_model: str = "gemini-3.8-flash"
     llm_fast_model: str = "gemini-3.5-flash-lite"
     llm_timeout_s: float = 120.0
     # Models users may pick, with their thinking levels: {"model": "low,medium,high*"} ("*" marks that model's
-    # default). The answer model is the default and is always allowed.
+    # default; "off*" makes no thinking the default). The answer model is the default and is always allowed.
     models_enabled: dict[str, str] = {}
     llm_thinking_levels: Annotated[list[str], NoDecode] = ["minimal", "low", "medium", "high", "xhigh"]
     llm_thinking_default: str = "medium"  # for a model not in MODELS_ENABLED (or listed without a "*")
+    # Groq models (direct answers, no thinking), offered on the picker's Groq tab when GROQ_API_KEY is set.
+    groq_answer_model: str = "qwen/qwen3.8-27b"
+    groq_fast_model: str = "qwen/qwen3.8-27b"
+    groq_models_enabled: dict[str, str] = {}
+    # Document tokens per Groq answer. The free plan caps input at 7,000 tokens a minute (measured 2026-11-27); this
+    # leaves room for instructions, schema, question and history.
+    groq_context_token_budget: int = 4000
     max_question_chars: int = 4000
     full_context_token_budget: int = 120_000
     retrieval_top_k: int = 8
@@ -108,8 +116,36 @@ class Settings(BaseSettings):
         return [o.strip() for o in v.split(",") if o.strip()] if isinstance(v, str) else v
 
     @property
-    def allowed_models(self) -> list[str]:
+    def providers(self) -> list[str]:
+        """LLM providers in the model picker: those with a key. With no key (or LLM_PROVIDER=fake) the offline fake
+        model answers for the Gemini list."""
+        keys = {"gemini": self.gemini_api_key, "groq": self.groq_api_key}
+        on = [p for p, key in keys.items() if key] if self.llm_provider != "fake" else []
+        return on or ["gemini"]
+
+    def provider_for(self, model: str) -> str:
+        groq = {self.groq_answer_model, self.groq_fast_model, *self.groq_models_enabled}
+        return "groq" if model in groq else "gemini"
+
+    def models_for(self, provider: str) -> list[str]:
+        """The provider's models, its answer model first. Groq's live in separate keys because dict settings from
+        .env merge into config.json's instead of replacing them."""
+        if provider == "groq":
+            return list(dict.fromkeys([self.groq_answer_model, *self.groq_models_enabled]))
         return list(dict.fromkeys([self.llm_answer_model, *self.models_enabled]))
+
+    @property
+    def default_model(self) -> str:
+        """LLM_PROVIDER picks the default tab; its answer model is the default model."""
+        return self.models_for(self.llm_provider if self.llm_provider in self.providers else self.providers[0])[0]
+
+    def context_budget(self, model: str) -> int:
+        """Document tokens one answer may send to this model's provider."""
+        return self.groq_context_token_budget if self.provider_for(model) == "groq" else self.full_context_token_budget
+
+    @property
+    def allowed_models(self) -> list[str]:
+        return [m for p in self.providers for m in self.models_for(p)]
 
     @property
     def thinking_levels(self) -> list[str]:
@@ -117,7 +153,11 @@ class Settings(BaseSettings):
 
     def thinking_for(self, model: str) -> tuple[list[str], str]:
         """(levels this model accepts, its default), in canonical order and within LLM_THINKING_LEVELS."""
-        spec = self.models_enabled.get(model)
+        spec = (
+            self.groq_models_enabled.get(model, "")
+            if self.provider_for(model) == "groq"
+            else self.models_enabled.get(model)
+        )
         if spec is None:
             levels, default = self.thinking_levels, self.llm_thinking_default.lower()
         else:
@@ -125,7 +165,7 @@ class Settings(BaseSettings):
             levels = [x.rstrip("*") for x in items]
             default = next((x.rstrip("*") for x in items if x.endswith("*")), self.llm_thinking_default.lower())
         levels = [lv for lv in THINKING_ORDER if lv in levels and lv in self.thinking_levels]
-        return levels, (default if default in levels else clamp_level(default, levels))
+        return levels, (default if default in levels or default == "off" else clamp_level(default, levels))
 
     @property
     def psycopg_dsn(self) -> str:

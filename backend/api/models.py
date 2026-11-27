@@ -1,4 +1,7 @@
-"""Model + thinking options for the composer. Lists come from backend/config.json (MODELS_ENABLED); limits from the provider (no generation)."""
+"""Model + thinking options for the composer.
+
+Lists come from backend/config.json (MODELS_ENABLED, GROQ_MODELS_ENABLED); limits from the provider (no generation).
+"""
 
 from typing import Any
 
@@ -24,12 +27,14 @@ async def list_models() -> ModelsOut:
     s = get_settings()
     models = await get_llm().describe_models(s.allowed_models)
     for meta in models:
+        meta["provider"] = s.provider_for(meta["id"])  # the picker's tab
         levels, default = s.thinking_for(meta["id"])
+        meta["thinking"] = meta["thinking"] and bool(levels)  # it thinks here only if levels are enabled
         meta["thinking_levels"] = levels if meta["thinking"] else []
         meta["default_thinking"] = default if meta["thinking"] else None
     return ModelsOut(
         models=models,
-        default_model=s.llm_answer_model,
+        default_model=s.default_model,
         thinking_levels=s.thinking_levels,
         default_thinking=s.llm_thinking_default.lower(),
         max_question_chars=s.max_question_chars,

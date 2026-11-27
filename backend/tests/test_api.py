@@ -73,12 +73,17 @@ async def test_hybrid_route_when_over_budget(client: Any, monkeypatch: pytest.Mo
     from backend.core.config import get_settings
 
     doc = await _ready_doc(client)
-    monkeypatch.setattr(get_settings(), "full_context_token_budget", 1)
-    r = await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "fourth quarter revenue outlook"})
-    events = _sse(r.text)
+    ask = f"/api/sessions/{doc['sid']}/messages"
+    monkeypatch.setattr(get_settings(), "full_context_token_budget", 30)  # the sample is 62 tokens
+    events = _sse((await client.post(ask, json={"question": "fourth quarter revenue outlook"})).text)
     assert events[0][1]["route"] == "hybrid"
     cite = next(d["citation"] for k, d in events if k == "citation")
     assert cite["page"] == 2
+
+    # The budget also caps what passage search sends (Groq's free plan): best hits first, never nothing.
+    monkeypatch.setattr(get_settings(), "full_context_token_budget", 1)
+    events = _sse((await client.post(ask, json={"question": "fourth quarter revenue outlook"})).text)
+    assert events[0][1]["route"] == "hybrid" and events[0][1]["blocks"] == 1
 
 
 async def test_owner_scoping(client: Any) -> None:

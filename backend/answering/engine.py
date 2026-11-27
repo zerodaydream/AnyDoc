@@ -261,7 +261,7 @@ async def answer_stream(
                 version.id,
                 question,
                 get_embedder(),
-                s.full_context_token_budget,
+                s.context_budget(model or llm.model_id),
                 s.retrieval_top_k,
             )
             # Model sees b0, b1, ...: it truncated long ids like pdf:8:7:38b2d058 in live tests.

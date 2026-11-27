@@ -32,7 +32,8 @@ export function useModelChoice() {
   const current = data?.models.find((m) => m.id === model) ?? data?.models.find((m) => m.id === data.default_model)
   const levels = current?.thinking_levels ?? []
   // The remembered preference is clamped to what this model accepts (same rule as the server).
-  const level = !levels.length ? 'off' : thinking === 'off' ? 'off' : clampLevel(thinking ?? current?.default_thinking ?? 'medium', levels)
+  const want = thinking ?? current?.default_thinking ?? 'medium' // a model may default to 'off'
+  const level = !levels.length || want === 'off' ? 'off' : clampLevel(want, levels)
   return { data, current, levels, level, maxChars: data?.max_question_chars ?? 4000 }
 }
 
