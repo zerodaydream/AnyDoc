@@ -9,6 +9,7 @@ import { decodeText } from '../text/text'
 export const DELIMITERS = [',', '\t', ';', '|']
 const SNIFF_CHARS = 65536 // code points, as Python slices
 const SNIFF_RECORDS = 50
+const MAX_PREAMBLE = 10
 const NUMERIC = /^[-+(]?[$€£¥₹]?(?:[0-9][0-9,]*(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?%?\)?$/
 
 export class MalformedCsv extends Error {}
@@ -103,15 +104,31 @@ export function hasHeader(rows: string[][]): boolean {
   return !first.some((name, k) => name && body.some((r) => k < r.length && strip(r[k]) === name))
 }
 
+/** A title-like record: blank, or too few cells filled to be a header of a table this wide. */
+function sparse(row: string[], width: number): boolean {
+  const filled = row.filter((c) => strip(c)).length
+  return filled < 2 || 2 * filled < width
+}
+
+/** Index of the header record, or null. 0 unless title lines (the preamble) sit above the table. */
+export function findHeader(rows: string[][]): number | null {
+  if (hasHeader(rows)) return 0
+  const width = rows.slice(0, SNIFF_RECORDS + MAX_PREAMBLE).reduce((w, r) => Math.max(w, r.length), 0)
+  if (width < 2) return null
+  let i = 0
+  while (i < Math.min(rows.length, MAX_PREAMBLE) && sparse(rows[i], width)) i++
+  return i > 0 && i < rows.length && hasHeader(rows.slice(i)) ? i : null
+}
+
 export function columnLetter(i: number): string {
   let s = ''
   for (let n = i + 1; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s
   return s
 }
 
-export function columnNames(rows: string[][], header: boolean): string[] {
+export function columnNames(rows: string[][], header: number | null): string[] {
   const width = rows.reduce((w, r) => Math.max(w, r.length), 0)
-  const head = header ? rows[0] : []
+  const head = header !== null ? rows[header] : []
   const seen = new Map<string, number>()
   return Array.from({ length: width }, (_, i) => {
     const base = (i < head.length ? words(head[i]).join(' ') : '') || `Column ${columnLetter(i)}`
@@ -123,14 +140,15 @@ export function columnNames(rows: string[][], header: boolean): string[] {
 
 export const isNumeric = (s: string) => NUMERIC.test(strip(s))
 
-export type Table = { rows: string[][]; header: boolean; columns: string[]; delimiter: string; encoding: string }
+/** `headerIndex`: index in rows of the header record (null: no header). Rows above it are the preamble. */
+export type Table = { rows: string[][]; headerIndex: number | null; columns: string[]; delimiter: string; encoding: string }
 
 export function readTable(buf: ArrayBuffer): Table {
   const { text, encoding } = decodeText(buf)
   const delimiter = sniff(text)
   const rows = parse(text, delimiter)
-  const header = hasHeader(rows)
-  return { rows, header, columns: columnNames(rows, header), delimiter, encoding }
+  const headerIndex = findHeader(rows)
+  return { rows, headerIndex, columns: columnNames(rows, headerIndex), delimiter, encoding }
 }
 
 /** One line of a cell, as the grid shows it (the backend collapses whitespace the same way in its blocks). */

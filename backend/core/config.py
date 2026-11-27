@@ -64,6 +64,7 @@ class Settings(BaseSettings):
 
     local_owner_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
     local_workspace_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
+    admin_token: str = ""  # enables /api/admin/* (sent as X-Admin-Token); empty = admin endpoints don't exist
 
     max_upload_mb: int = 100
     max_pages: int = 500

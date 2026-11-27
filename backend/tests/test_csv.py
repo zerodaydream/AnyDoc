@@ -15,6 +15,7 @@ from backend.extraction.formats.csv.table import (
     column_letter,
     column_names,
     decimals,
+    find_header,
     has_header,
     parse,
     sniff,
@@ -110,11 +111,30 @@ def test_header_detection(rows: list[list[str]], header: bool) -> None:
     assert has_header(rows) is header
 
 
+@pytest.mark.parametrize(
+    ("rows", "index"),
+    [
+        ([["Name", "Score"], ["Ada", "9"]], 0),  # a header in row 1 is taken as before
+        ([["Title", "", ""], ["", "", ""], ["a", "b", "c"], ["1", "2", "3"]], 2),  # title + blank above
+        ([[], ["Report"], ["a", "b", "c"], ["1", "2", "3"]], 2),  # a one-cell title line
+        ([["Title", "", "", ""], ["", "Version", "Date", ""], ["", "7.1", "2018", ""]], 1),  # half filled is enough
+        ([["Title", "", ""], ["10", "20", "30"], ["40", "50", "60"]], None),  # numbers under a title: no header
+        ([["Title", "", ""], ["note", "", ""]], None),  # nothing but title lines
+        ([["Fruit"], ["apple"]], 0),  # single column: unchanged
+        ([["10"], ["Fruit"], ["apple"]], None),  # single column: no title skipping
+        ([["T", "", ""]] * 11 + [["a", "b", "c"], ["1", "2", "3"]], None),  # at most 10 title lines
+    ],
+)
+def test_header_below_title_lines(rows: list[list[str]], index: int | None) -> None:
+    assert find_header(rows) == index
+
+
 def test_column_names() -> None:
     assert [column_letter(i) for i in (0, 25, 26, 27, 701, 702)] == ["A", "Z", "AA", "AB", "ZZ", "AAA"]
     rows = [["Name", " Name ", "", "Total\nUSD"], ["a", "b", "c", "1", "extra"]]
-    assert column_names(rows, True) == ["Name", "Name (2)", "Column C", "Total USD", "Column E"]
-    assert column_names(rows, False) == ["Column A", "Column B", "Column C", "Column D", "Column E"]
+    assert column_names(rows, 0) == ["Name", "Name (2)", "Column C", "Total USD", "Column E"]
+    assert column_names(rows, None) == ["Column A", "Column B", "Column C", "Column D", "Column E"]
+    assert column_names([["Title"], *rows], 1)[:2] == ["Name", "Name (2)"]
 
 
 @pytest.mark.parametrize(
@@ -245,6 +265,71 @@ def test_no_header_file_uses_letters_and_row_one(tmp_path: Path) -> None:
     r = extract_csv(_write(tmp_path, EDGE_FILES["no-header.csv"]), LIMITS)
     assert r.blocks[0].content.split("\n")[:2] == ["Columns: Column A | Column B | Column C", "Row 1: 10 | 20 | 30"]
     assert all(s[2] != 1 or s[0] > 40 for s in r.blocks[0].format_metadata["segments"])  # synthetic names map nowhere
+
+
+VERSIONS = (
+    '"EU Region eCTD Validation Criteria\n\nVersion 7.1",,,,\n'
+    "The order of changes appears reverse,,,,\n"
+    ",Version Number,Date,Description,\n"
+    ",7.1,2018-02-01,Addressing CR,\n"
+    ",7.0,2017-11-07,Final new major version,\n"
+    ",3.94,2012-05-01,Final draft,\n"
+    ",3.9-3.93,Apr-May 2012,TIGes harmonisation,\n"
+    ",3.5-3.6,2012-02-15,Minor changes,\n"
+    ",1.0,2008-01-01,First approved version,\n"
+)
+
+
+def test_title_lines_above_the_header(tmp_path: Path) -> None:
+    r = extract_csv(_write(tmp_path, VERSIONS), LIMITS)
+    assert r.metadata["header_row"] == 3 and r.metadata["data_rows"] == 6
+    title, table = r.blocks
+    assert title.content == (
+        "Row 1: EU Region eCTD Validation Criteria Version 7.1\nRow 2: The order of changes appears reverse"
+    )
+    assert title.block_id.startswith("csv:1:0:") and [s[2:] for s in title.format_metadata["segments"]] == [
+        [1, 0],
+        [2, 0],
+    ]
+    lines = table.content.split("\n")
+    assert lines[:2] == [
+        "Columns: Column A | Version Number | Date | Description | Column E",
+        "Row 4:  | 7.1 | 2018-02-01 | Addressing CR | ",
+    ]
+    head = [s for s in table.format_metadata["segments"] if s[2] == 3]
+    assert [table.content[a:b] for a, b, _, _ in head] == ["Version Number", "Date", "Description"]  # mapped to row 3
+    col = {c["name"]: c for c in r.metadata["columns"]}["Version Number"]
+    assert col["type"] == "number" and col["not_numbers"] == 2
+    assert col["not_number_examples"] == ["3.9-3.93", "3.5-3.6"]
+    assert 'not_numbers="2"' in CSV_QUERIES.plan_prompt(r.metadata, "q", [])
+
+
+def test_sum_uses_the_numbers_and_names_the_cells_left_out(tmp_path: Path) -> None:
+    path = _write(tmp_path, VERSIONS)
+    (block,) = run_plan(path, {"queries": [{"compute": "sum", "column": "Version Number"}]}, LIMITS)
+    lines = block.content.split("\n")
+    assert lines[0] == 'Query: sum of "Version Number"'
+    assert lines[1] == (
+        'Rows matched: 6 of 6 data rows; 2 "Version Number" values that aren\'t numbers left out: "3.9-3.93", "3.5-3.6"'
+    )
+    assert lines[2] == 'Result: sum of "Version Number" = 19.04'  # 7.1 + 7.0 + 3.94 + 1.0
+    i = block.content.index('"3.9-3.93"') + 1
+    ev = EvidenceBlock(block.block_id, "csv", block.content, None, block.format_metadata, None)
+    v = validate_segment(
+        "The versions add up to 19.04, leaving out 3.9-3.93 and 3.5-3.6.",
+        [
+            {"block_id": block.block_id, "quote": block.content[i : i + 8]},
+            {"block_id": block.block_id, "quote": lines[2]},
+        ],
+        {block.block_id: ev},
+        0.9,
+    )
+    assert v.ok, v.reason
+
+
+def test_mostly_text_columns_still_refuse_sums(tmp_path: Path) -> None:
+    path = _write(tmp_path, "Name,Code\na,x1\nb,x2\nc,3\n")
+    assert run_plan(path, {"queries": [{"compute": "sum", "column": "Code"}]}, LIMITS) == []
 
 
 @pytest.mark.parametrize(

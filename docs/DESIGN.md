@@ -133,7 +133,9 @@ none. Low-confidence evidence uses `--warn` for wash, pill and pin.
 - Empty workspace: "Drop a PDF here or choose a file. Answers will link to the exact page and line." Button: "Choose file".
 - Processing: step list with live state — Uploading, Checking file, Reading pages (12 of 38), Indexing, Ready.
 - Failed: say what and what to do. "This PDF couldn't be opened: the file is damaged. Try exporting it again." Button: "Upload another file".
-- Abstain: "The document doesn't say." followed by the closest passages it did check, each clickable.
+- Abstain: "I couldn't find an answer to this in your document." then what happens next: ", so I'm checking the web
+  as well." while the web search runs (", so I checked…" after), otherwise "Asking it in other words may help." and
+  the closest passages it did check, each clickable.
 - Citation dropped during streaming: the sentence fades to muted with "Removed: couldn't verify against the document."
 
 ## Principles

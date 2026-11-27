@@ -16,6 +16,10 @@ class NotFound(AppError):
         super().__init__("not_found", f"{what} not found.")
 
 
+class Forbidden(AppError):
+    status_code = 403
+
+
 class Conflict(AppError):
     status_code = 409
 

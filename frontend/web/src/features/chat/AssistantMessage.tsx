@@ -25,6 +25,14 @@ type Props = {
 }
 
 const toCitation = (c: Closest): Citation => ({ ...c, match: 'exact', score: 0, flags: [] })
+
+/** What to say when the document has no answer: plainly, and what happens next (web search, nearby passages). */
+function abstainText(webSearching: string | null | undefined, web: WebResult | null | undefined): string {
+  const missed = 'I couldn’t find an answer to this in your document'
+  if (webSearching && !web) return `${missed}, so I’m checking the web as well.`
+  if (web) return `${missed}, so I checked the web as well.`
+  return `${missed}. Asking it in other words may help.`
+}
 const SHOWN = 3
 
 export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0, reasoning, suggestion, web, webSearching, thinkingStartedAt, thinkingMs, live = false }: Props) {
@@ -60,7 +68,7 @@ export function AssistantMessage({ id, segments, status, closest = [], error, ro
         )}
 
         {abstained && !hasText ? (
-          <p>The document doesn’t say.</p>
+          <p>{abstainText(webSearching, web)}</p>
         ) : (
           !waiting &&
           (hasText || !error) && (
@@ -137,7 +145,7 @@ export function AssistantMessage({ id, segments, status, closest = [], error, ro
 
         {abstained && closest.length > 0 && (
           <div className="mt-3 font-sans">
-            <p className="mb-1 text-[13px] text-muted">Closest passages it checked:</p>
+            <p className="mb-1 text-[13px] text-muted">Closest passages I checked:</p>
             {closest.map((c, i) => (
               <SourceQuote key={c.block_id} id={`${id}:closest`} n={i + 1} citation={toCitation(c)} />
             ))}

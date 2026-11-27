@@ -696,6 +696,28 @@ async def test_web_lookup_off_by_flag_and_skipped_when_answered(client: Any, mon
     assert engine.queries == []
 
 
+async def test_no_web_lookup_for_questions_about_table_rows(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import computed
+
+    doc = await _ready_csv(client, b"Q,R\n1,2\n3,4\n", "tiny.csv")
+    engine = _use_engine(monkeypatch, _Engine())
+
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("sandbox down")
+
+    monkeypatch.setattr(computed, "run_sandboxed", broken)  # the plan has a query, but nothing gets computed
+    url = f"/api/sessions/{doc['sid']}/messages"
+    events = _sse((await client.post(url, json={"question": "What is the sum of Q?"})).text)
+    kinds = [k for k, _ in events]
+    done = events[-1][1]
+    assert done["status"] == "insufficient_evidence" and done["usage"]["computed"]["queries"] == 1
+    assert "web_searching" not in kinds and engine.queries == []  # the web can't know this file's rows
+
+    # A question the planner doesn't turn into a query still falls back to the web.
+    events = _sse((await client.post(url, json={"question": "zebra migration patterns"})).text)
+    assert "web_searching" in [k for k, _ in events] and engine.queries == ["zebra migration patterns"]
+
+
 async def test_web_lookup_failure_degrades(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     _use_engine(monkeypatch, _Engine(fail="Web search quota is used up for now."))
     doc = await _ready_doc(client)
@@ -703,3 +725,63 @@ async def test_web_lookup_failure_degrades(client: Any, monkeypatch: pytest.Monk
     web = dict(events)["web"]
     assert web["status"] == "unavailable" and "quota" in web["note"] and web["segments"] == []
     assert events[-1][0] == "done" and events[-1][1]["status"] == "insufficient_evidence"
+
+
+# --- admin ----------------------------------------------------------------------------------------------------
+
+
+async def test_admin_delete_document_removes_everything(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from sqlalchemy import func, select
+
+    from backend.core.config import get_settings
+    from backend.core.db import get_sessionmaker
+    from backend.core.models import Block, ChatSession, Chunk, DocumentVersion, Message
+    from backend.storage.local import get_storage
+
+    data = f"Region,Revenue\nWest,120\nEast,{uuid.uuid4().int % 1000}\n".encode()  # bytes no other test stores
+    doc = await _ready_csv(client, data, "admin.csv")
+    twin = await _ready_csv(client, data, "admin.csv")  # same bytes: shares the stored file
+    await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "What is the Revenue for West?"})
+    url = f"/api/admin/documents/{doc['id']}"
+
+    assert (await client.delete(url)).status_code == 404  # ADMIN_TOKEN unset: the endpoint doesn't exist
+    monkeypatch.setattr(get_settings(), "admin_token", "s3cret")
+    assert (await client.delete(url)).status_code == 403
+    assert (await client.delete(url, headers={"X-Admin-Token": "wrong"})).status_code == 403
+    assert (await client.get(f"/api/documents/{doc['id']}")).status_code == 200
+
+    async with get_sessionmaker()() as db:
+        key, vid = (
+            await db.execute(
+                select(DocumentVersion.storage_key, DocumentVersion.id).where(DocumentVersion.document_id == doc["id"])
+            )
+        ).one()
+        for model in (Block, Chunk, Message):  # there is something to delete
+            assert await db.scalar(select(func.count()).select_from(model).where(model.version_id == vid))
+    with get_storage().local_path(key) as path:
+        assert path.exists()
+
+    admin = {"X-Admin-Token": "s3cret"}
+    assert (await client.delete(url, headers=admin)).status_code == 204
+    assert (await client.get(f"/api/documents/{doc['id']}")).status_code == 404
+    assert (await client.delete(url, headers=admin)).status_code == 404
+    async with get_sessionmaker()() as db:
+        assert not await db.scalar(select(func.count()).where(DocumentVersion.document_id == doc["id"]))
+        assert not await db.scalar(select(func.count()).where(ChatSession.document_id == doc["id"]))
+        for model in (Block, Chunk, Message):
+            assert await db.scalar(select(func.count()).select_from(model).where(model.version_id == vid)) == 0
+    with get_storage().local_path(key) as path:
+        assert path.exists()  # the twin still uses these bytes
+
+    assert (await client.delete(f"/api/admin/documents/{twin['id']}", headers=admin)).status_code == 204
+    with get_storage().local_path(key) as path:
+        assert not path.exists()  # last reference gone: the file goes too
+
+
+async def test_admin_delete_refuses_a_document_still_processing(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "admin_token", "s3cret")
+    doc = await _upload(client, sample_report())
+    r = await client.delete(f"/api/admin/documents/{doc['id']}", headers={"X-Admin-Token": "s3cret"})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "still_processing"

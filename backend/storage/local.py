@@ -22,6 +22,7 @@ class StoredObject:
 class Storage(Protocol):
     async def put_stream(self, chunks: AsyncIterator[bytes], max_bytes: int) -> StoredObject: ...
     def local_path(self, key: str) -> AbstractContextManager[Path]: ...
+    def delete(self, key: str) -> None: ...
 
 
 class LocalDiskStorage:
@@ -67,6 +68,10 @@ class LocalDiskStorage:
 
     def local_path(self, key: str) -> AbstractContextManager[Path]:
         return nullcontext(self._path(key))
+
+    def delete(self, key: str) -> None:
+        """Remove a stored original. Only for admin deletion, and only once no version references the key."""
+        self._path(key).unlink(missing_ok=True)
 
 
 _storage: Storage | None = None

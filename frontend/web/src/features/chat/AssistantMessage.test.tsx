@@ -50,7 +50,7 @@ describe('AssistantMessage', () => {
     let a = startAnswer('What does BLEU stand for?')
     a = applyEvent(a, { event: 'web_searching', data: { query: 'BLEU machine translation full form' } })
     const { rerender, container } = render(<AssistantMessage id="w1" {...a} />)
-    expect(screen.getByText('The document doesn’t say.')).toBeInTheDocument()
+    expect(screen.getByText('I couldn’t find an answer to this in your document, so I’m checking the web as well.')).toBeInTheDocument()
     expect(screen.getByText(/Searching the web for “BLEU machine translation full form”/)).toBeInTheDocument()
 
     const web = {
@@ -68,6 +68,7 @@ describe('AssistantMessage', () => {
     a = applyEvent(applyEvent(a, { event: 'web', data: web }), { event: 'done', data: { status: 'insufficient_evidence' } })
     rerender(<AssistantMessage id="w1" {...a} />)
     expect(screen.getByText('BLEU stands for Bilingual Evaluation Understudy.')).toBeInTheDocument()
+    expect(screen.getByText('I couldn’t find an answer to this in your document, so I checked the web as well.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Example reference/ })).toHaveAttribute('href', 'https://example.org/bleu')
     expect(screen.queryByText(/Unused/)).toBeNull() // only sources that back a sentence are listed
     expect(screen.queryByRole('button', { name: /^Citation/ })).toBeNull()
@@ -98,7 +99,7 @@ describe('AssistantMessage', () => {
         closest={[{ block_id: 'pdf:1:0:aa', page: 1, quote: 'Nearby text', location: cite.location }]}
       />,
     )
-    expect(screen.getByText('The document doesn’t say.')).toBeInTheDocument()
+    expect(screen.getByText('I couldn’t find an answer to this in your document. Asking it in other words may help.')).toBeInTheDocument()
     expect(screen.getByText(/Nearby text/)).toBeInTheDocument()
   })
 

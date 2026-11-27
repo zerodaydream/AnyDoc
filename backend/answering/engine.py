@@ -3,8 +3,8 @@
 Events: meta, text_delta, citation, segment_retracted, suggestion, web_searching, web, done, error.
 The suggestion is an uncited next-step hint, sent only for answers that cite something.
 When the document can't answer (or the model asks for a web query) and WEB_SEARCH_ENABLED is on, the web search
-tool runs (answering/web.py); its result is a separate `web` event, never mixed into the document answer or its
-citations.
+tool runs (answering/web.py), except for questions the table planner turned into queries over the file's rows.
+Its result is a separate `web` event, never mixed into the document answer or its citations.
 Text streams immediately; a citation is emitted only after it validates; a segment whose
 evidence fails is retracted. Locations come from the IR, never from the model.
 """
@@ -325,7 +325,10 @@ async def answer_stream(
                             "location": b.source_location,
                         }
                     )
-            if s.web_search_enabled and (status == "insufficient_evidence" or session.s.web_query):
+            # A question the table planner turned into queries is about this file's own rows: the web can't know
+            # them, so a failed or empty computation never falls back to a web search.
+            about_rows = bool((usage.get("computed") or {}).get("queries"))
+            if s.web_search_enabled and not about_rows and (status == "insufficient_evidence" or session.s.web_query):
                 query = session.s.web_query or " ".join(question.split())[:_MAX_WEB_QUERY]
                 yield _ev("web_searching", query=query)
                 web = await web_lookup(

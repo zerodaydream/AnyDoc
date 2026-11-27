@@ -23,10 +23,25 @@ Read this first every session. Update it last.
 - Live: ddgs + Gemini and ddgs + Groq both answered "BLEU stands for bilingual evaluation understudy" with a verified
   Wikipedia quote. ddgs measured flaky (throttled minutes after a burst). Tavily not tried live (no key).
 
+## M5 fix — sums over real-world CSVs (2026-11-28)
+- Bug: "sum of all the versions in column B" on a CSV with 2 title lines above the header answered "The document
+  doesn't say" and searched the web. Causes: (1) header only looked for in record 1, so columns were "Column A..E"
+  and the header text counted as data; (2) a sum needed ≥ 90% numeric cells (column had 24/28: ranges like
+  "3.9-3.93"), so the query was dropped silently; (3) abstain always fell back to web search.
+- Fix: header found below up to 10 title lines (preamble = own block, viewer shows it above the data, parity fixture
+  `title-rows.csv`); number column = ≥ 50% numeric (`NUMBER_SHARE`), evidence names left-out cells, schema shows
+  `not_numbers`; no web fallback when the planner returned queries. Abstain copy now says what happens next.
+- Real file: header row 3, sum = 106.74, 3 ranges named as left out. Backend 258 tests, frontend 100.
+- Existing CSVs need re-upload to pick up the new header detection.
+- Session delete keeps the document + index (by design). Added admin-only
+  `DELETE /api/admin/documents/{id}` (header `X-Admin-Token` = `ADMIN_TOKEN`; unset = 404): DB cascade removes
+  versions, blocks, chunks/embeddings, sessions, messages; stored original removed once no version uses it
+  (content-addressed, shared by identical uploads); 409 while ingesting; audit `document.delete`. No UI yet.
+
 ## M5 — CSV (2026-11-28, ADR-0006, evidence D12)
 - Format module `backend/extraction/formats/csv/`: own RFC 4180 tokeniser (Python csv semantics, but an unclosed
   quote fails the file), deterministic delimiter (`,` tab `;` `|`) and header rules, decoding shared with TXT.
-  `.csv` and `.tsv`. Rows = file records from 1 (header = row 1, blank lines count). No new dependency.
+  `.csv` and `.tsv`. Rows = file records from 1 (header and title lines included, blank lines count). No new dependency.
 - Blocks: ≤ 40 rows / ~1,500 chars, `Columns: …` + `Row 12: a | b | c`, every cell span recorded → quotes map to exact
   cells. `CsvLocation{regions:[{row_start,row_end,col_start,col_end}], rows, columns, truncated}`; labels
   "row 12, Total", "rows 3–5", "47 rows, Region and Units". Extent "120 rows, 11 columns". Limit = `MAX_TEXT_CHARS`,

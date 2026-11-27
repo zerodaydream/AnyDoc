@@ -133,11 +133,12 @@ EDGE_FILES: dict[str, bytes] = {
     "cp1252.csv": "Caf\xe9,Price\nLatt\xe9,3.50\n".encode("cp1252"),
     "duplicate-names.csv": b"Name,Name,,Total\nA,B,C,1\nD,E,F,2\n",
     "single-column.csv": b"Fruit\napple\npear\n",
+    "title-rows.csv": b'"Report title\nline two",,,\nA note about it,,,\n\n,Version,Date,Notes\n,7.1,2018-02-01,x\n,3.9-3.93,2012,y\n',
 }
 
 
 def parity_expectations() -> dict[str, Any]:
-    from backend.extraction.formats.csv.table import column_names, has_header, parse, sniff
+    from backend.extraction.formats.csv.table import column_names, find_header, parse, sniff
     from backend.extraction.formats.text.decode import decode_text
 
     out: dict[str, Any] = {}
@@ -145,11 +146,11 @@ def parity_expectations() -> dict[str, Any]:
         text, encoding = decode_text(data)
         d = sniff(text)
         rows = parse(text, d)
-        header = has_header(rows)
+        header = find_header(rows)
         out[name] = {
             "encoding": encoding,
             "delimiter": d,
-            "header": header,
+            "headerIndex": header,
             "columns": column_names(rows, header),
             "rows": rows,
         }

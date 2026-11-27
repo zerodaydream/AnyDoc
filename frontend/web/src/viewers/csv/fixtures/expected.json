@@ -2,7 +2,7 @@
  "quoting.csv": {
   "encoding": "utf-8",
   "delimiter": ",",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "Name",
    "Comment",
@@ -47,7 +47,7 @@
  "semicolon.csv": {
   "encoding": "utf-8",
   "delimiter": ";",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "Stadt",
    "Einwohner",
@@ -74,7 +74,7 @@
  "tabs.tsv": {
   "encoding": "utf-8",
   "delimiter": "\t",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "id",
    "name",
@@ -106,7 +106,7 @@
  "no-header.csv": {
   "encoding": "utf-8",
   "delimiter": ",",
-  "header": false,
+  "headerIndex": null,
   "columns": [
    "Column A",
    "Column B",
@@ -133,7 +133,7 @@
  "bom-crlf.csv": {
   "encoding": "utf-8",
   "delimiter": "|",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "City",
    "Country"
@@ -156,7 +156,7 @@
  "cp1252.csv": {
   "encoding": "windows-1252",
   "delimiter": ",",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "Café",
    "Price"
@@ -175,7 +175,7 @@
  "duplicate-names.csv": {
   "encoding": "utf-8",
   "delimiter": ",",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "Name",
    "Name (2)",
@@ -206,7 +206,7 @@
  "single-column.csv": {
   "encoding": "utf-8",
   "delimiter": ",",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "Fruit"
   ],
@@ -222,10 +222,54 @@
    ]
   ]
  },
+ "title-rows.csv": {
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "headerIndex": 3,
+  "columns": [
+   "Column A",
+   "Version",
+   "Date",
+   "Notes"
+  ],
+  "rows": [
+   [
+    "Report title\nline two",
+    "",
+    "",
+    ""
+   ],
+   [
+    "A note about it",
+    "",
+    "",
+    ""
+   ],
+   [],
+   [
+    "",
+    "Version",
+    "Date",
+    "Notes"
+   ],
+   [
+    "",
+    "7.1",
+    "2018-02-01",
+    "x"
+   ],
+   [
+    "",
+    "3.9-3.93",
+    "2012",
+    "y"
+   ]
+  ]
+ },
  "orders.csv": {
   "encoding": "utf-8",
   "delimiter": ",",
-  "header": true,
+  "headerIndex": 0,
   "columns": [
    "Order ID",
    "Date",

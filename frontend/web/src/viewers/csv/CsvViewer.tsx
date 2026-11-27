@@ -25,7 +25,7 @@ function measure(t: Table): Layout {
     sample.forEach((r, i) => {
       const v = cellText(r[c] ?? '')
       longest = Math.max(longest, Math.min(48, v.length))
-      if (v && (i > 0 || !t.header)) {
+      if (v && (t.headerIndex === null || i > t.headerIndex)) {
         filled++
         if (isNumeric(v)) nums++
       }
@@ -67,8 +67,9 @@ function colAt(lefts: number[], x: number): number {
 }
 
 /**
- * CSV as a virtualised grid: only the rows and columns in view are in the DOM. Row numbers are the file's records
- * (header = row 1), as the backend counts them. Citations wash their cells, pin the note in the row gutter and
+ * CSV as a virtualised grid: only the rows and columns in view are in the DOM. Row numbers are the file's records,
+ * as the backend counts them. The header record is pinned on top; title lines above it (the preamble) are the first
+ * body rows, so every record is shown once, in file order. Citations wash their cells, pin the note in the row gutter and
  * scroll the first cell ~30% down, like the other viewers.
  */
 export default function CsvViewer({ src, ref, onState }: ViewerProps) {
@@ -107,8 +108,9 @@ export default function CsvViewer({ src, ref, onState }: ViewerProps) {
 
   const base = useMemo(() => (table ? measure(table) : null), [table])
   const rowH = ROW_H * scale
-  const bodyStart = table?.header ? 1 : 0 // index in table.rows of the first body row
-  const bodyCount = table ? table.rows.length - bodyStart : 0
+  const hi = table?.headerIndex ?? null // index in table.rows of the header record (pinned on top)
+  const bodyCount = table ? table.rows.length - (hi === null ? 0 : 1) : 0
+  const recordAt = (i: number) => (hi === null || i < hi ? i : i + 1) // body position -> index in table.rows
   const gutter = (base?.gutter ?? 48) * scale
   const lefts = useMemo(() => base?.lefts.map((x) => x * scale) ?? [], [base, scale])
   const width = gutter + (base?.total ?? 0) * scale
@@ -123,7 +125,8 @@ export default function CsvViewer({ src, ref, onState }: ViewerProps) {
     return () => ro.disconnect()
   }, [table])
 
-  const rowTop = (row: number) => (table?.header && row === 1 ? 0 : rowH * (row - bodyStart)) // row is 1-based
+  // row is 1-based; body position p sits at rowH * (p + 1), under the pinned header
+  const rowTop = (row: number) => (hi !== null && row === hi + 1 ? 0 : rowH * (hi !== null && row > hi + 1 ? row - 1 : row))
   const scrollToCell = (row: number, col: number) => {
     const el = containerRef.current
     if (!el || !base) return
@@ -251,23 +254,23 @@ export default function CsvViewer({ src, ref, onState }: ViewerProps) {
       <div
         role="grid"
         aria-label={`${table.columns.length} columns, ${table.rows.length} rows`}
-        aria-rowcount={table.rows.length + (table.header ? 0 : 1)}
+        aria-rowcount={bodyCount + 1}
         aria-colcount={table.columns.length}
         className="ad-csv-grid"
         style={{ width, height: rowH * (bodyCount + 1) }}
       >
-        <div role="row" aria-rowindex={1} className="ad-csv-head" style={{ width, height: rowH }} data-header={String(table.header)}>
-          {gutterCell(table.header ? 1 : null)}
-          {cols.map((c) => cell(table.header ? 1 : 0, c, table.columns[c], 'columnheader'))}
+        <div role="row" aria-rowindex={1} className="ad-csv-head" style={{ width, height: rowH }} data-header={String(hi !== null)}>
+          {gutterCell(hi !== null ? hi + 1 : null)}
+          {cols.map((c) => cell(hi !== null ? hi + 1 : 0, c, table.columns[c], 'columnheader'))}
         </div>
         {rows.map((i) => {
-          const row = bodyStart + i + 1
-          const cells = table.rows[bodyStart + i]
+          const row = recordAt(i) + 1
+          const cells = table.rows[recordAt(i)]
           return (
             <div
               key={row}
               role="row"
-              aria-rowindex={row + (table.header ? 0 : 1)}
+              aria-rowindex={i + 2}
               className="ad-csv-row"
               style={{ top: rowH * (i + 1), width, height: rowH }}
             >

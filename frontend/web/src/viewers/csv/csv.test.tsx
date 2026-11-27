@@ -14,7 +14,7 @@ import CsvViewer from './CsvViewer'
 
 // Written by `uv run python -m backend.tests.csvgen` from the backend's own parser.
 const FIXTURES = resolve(__dirname, 'fixtures')
-type Expected = { encoding: string; delimiter: string; header: boolean; columns: string[]; rows: string[][] }
+type Expected = { encoding: string; delimiter: string; headerIndex: number | null; columns: string[]; rows: string[][] }
 const EXPECTED: Record<string, Expected> = JSON.parse(readFileSync(resolve(FIXTURES, 'expected.json'), 'utf8'))
 const bytes = (name: string) => {
   const b = readFileSync(resolve(FIXTURES, name))
@@ -25,7 +25,7 @@ describe('csv parsing mirrors the backend', () => {
   it.each(Object.keys(EXPECTED))('%s: same encoding, delimiter, header, column names and cells', (name) => {
     const t = readTable(bytes(name))
     const want = EXPECTED[name]
-    expect({ encoding: t.encoding, delimiter: t.delimiter, header: t.header, columns: t.columns, rows: t.rows }).toEqual(want)
+    expect({ encoding: t.encoding, delimiter: t.delimiter, headerIndex: t.headerIndex, columns: t.columns, rows: t.rows }).toEqual(want)
   })
 
   it.each([
@@ -117,6 +117,19 @@ describe('CsvViewer', () => {
     const cells = rowOf(container, 2)!.querySelectorAll<HTMLElement>('[role=gridcell]')
     expect(cells[6].dataset.num).toBe('true')
     expect(cells[2].dataset.num).toBeUndefined()
+  })
+
+  it('pins a header found below title lines and shows the title lines first, in file order', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes('title-rows.csv'), { status: 200 })))
+    const { container } = await mount()
+    const head = rowOf(container, 1)!
+    expect(head.querySelector('[role=rowheader]')).toHaveTextContent('4')
+    expect([...head.querySelectorAll('[role=columnheader]')].map((c) => c.textContent)).toEqual(['Column A', 'Version', 'Date', 'Notes'])
+    const body = [...container.querySelectorAll<HTMLElement>('.ad-csv-row')]
+    expect(body.map((r) => r.querySelector('[role=rowheader]')!.textContent)).toEqual(['1', '2', '3', '5', '6'])
+    expect(body[0]).toHaveTextContent('Report title line two')
+    expect(body.map((r) => r.style.top)).toEqual(['28px', '56px', '84px', '112px', '140px'])
+    expect(body[4].querySelectorAll('[role=gridcell]')[1]).toHaveTextContent('3.9-3.93')
   })
 
   it('a citation washes exactly its cells, pins the row and scrolls it into view', async () => {

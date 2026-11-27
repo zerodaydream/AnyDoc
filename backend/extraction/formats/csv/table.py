@@ -7,10 +7,15 @@ Rules (identical in both languages, checked by a parity fixture):
   inside an unquoted field is literal. A blank line is an empty record. Unlike the csv module, a quote that is never
   closed fails the file instead of swallowing the rest of it.
 - Delimiter: the candidate (`,` tab `;` `|`) whose first 50 records agree best on one field count of 2 or more.
-- Header: the first record is a header when at least half its cells are filled, none is a number, there is at
-  least one more record, and no name reappears as a value in its column in the next 50 records. (Empty and repeated
-  names are allowed: pandas writes an empty first name for its index. They become "Column A", "Name (2)".)
-- Rows are numbered by record, from 1, header included, blank lines included: what a spreadsheet shows.
+- Header: a record is a header when at least half its cells are filled, none is a number, there is at least one
+  more record, and no name reappears as a value in its column in the next 50 records. (Empty and repeated names are
+  allowed: pandas writes an empty first name for its index. They become "Column A", "Name (2)".)
+  The first record is tried first. When it isn't a header, title lines above the table (blank records, or records
+  with fewer than 2 or fewer than half of the table's cells filled, at most 10) are skipped and the next record is
+  tried. Those title lines are the preamble: kept and shown, but not data rows.
+- Rows are numbered by record, from 1, header and preamble included, blank lines included: what a spreadsheet shows.
+- A column is a number column when at least half its filled cells are numbers (NUMBER_SHARE); computations use the
+  numbers and report the other cells they left out.
 
 Pure functions, no DB, no network: runs inside the parsing sandbox.
 """
@@ -27,6 +32,8 @@ DELIMITERS = (",", "\t", ";", "|")
 SNIFF_CHARS = 65536
 SNIFF_RECORDS = 50
 MAX_COLUMNS = 1000
+MAX_PREAMBLE = 10
+NUMBER_SHARE = 0.5
 _QUOTED = re.compile(r'"([^"]*(?:""[^"]*)*)"')
 # A number as people write it in tables: sign, currency, thousands commas, decimals, exponent, percent, (negative).
 NUMERIC = re.compile(r"^[-+(]?[$€£¥₹]?(?:[0-9][0-9,]*(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?%?\)?$")
@@ -107,6 +114,25 @@ def has_header(rows: list[list[str]]) -> bool:
     return not any(name and k < len(r) and r[k].strip() == name for k, name in enumerate(first) for r in body)
 
 
+def _sparse(row: list[str], width: int) -> bool:
+    """A title-like record: blank, or too few cells filled to be a header of a table this wide."""
+    filled = sum(1 for c in row if c.strip())
+    return filled < 2 or 2 * filled < width
+
+
+def find_header(rows: list[list[str]]) -> int | None:
+    """Index of the header record, or None. 0 unless title lines sit above the table (see the module rules)."""
+    if has_header(rows):
+        return 0
+    width = max((len(r) for r in rows[: SNIFF_RECORDS + MAX_PREAMBLE]), default=0)
+    if width < 2:
+        return None
+    i = 0
+    while i < min(len(rows), MAX_PREAMBLE) and _sparse(rows[i], width):
+        i += 1
+    return i if 0 < i < len(rows) and has_header(rows[i:]) else None
+
+
 def column_letter(i: int) -> str:
     s = ""
     i += 1
@@ -116,9 +142,10 @@ def column_letter(i: int) -> str:
     return s
 
 
-def column_names(rows: list[list[str]], header: bool) -> list[str]:
+def column_names(rows: list[list[str]], header: int | None) -> list[str]:
+    """Names from the header record at index `header` (None: no header), "Column A"... where a name is missing."""
     width = max((len(r) for r in rows), default=0)
-    head = rows[0] if header else []
+    head = rows[header] if header is not None else []
     names: list[str] = []
     seen: dict[str, int] = {}
     for i in range(width):
@@ -150,15 +177,37 @@ def decimals(s: str) -> int:
 @dataclass(slots=True)
 class Table:
     rows: list[list[str]]  # rows[i] is record i + 1; a blank line is []
-    header: bool
+    header_index: int | None  # index in rows of the header record; None: no header
     columns: list[str]
     delimiter: str
     encoding: str
 
+    @property
+    def header(self) -> bool:
+        return self.header_index is not None
+
+    @property
+    def header_row(self) -> int | None:
+        """Row number of the header (1-based, as the viewer shows it)."""
+        return None if self.header_index is None else self.header_index + 1
+
+    def head(self) -> list[str]:
+        return self.rows[self.header_index] if self.header_index is not None else []
+
+    def preamble_rows(self) -> list[tuple[int, list[str]]]:
+        """(row number, cells) of the non-blank title lines above the header."""
+        return [(i + 1, r) for i, r in enumerate(self.rows[: self.header_index or 0]) if r]
+
     def data_rows(self) -> list[tuple[int, list[str]]]:
         """(row number, cells) of every non-blank record below the header."""
-        start = 1 if self.header else 0
+        start = 0 if self.header_index is None else self.header_index + 1
         return [(i + 1, r) for i, r in enumerate(self.rows[start:], start) if r]
+
+
+def mostly_numbers(values: list[str]) -> bool:
+    """Filled cells of one column: enough of them are numbers to compute with (the rest are reported, not used)."""
+    filled = [v for v in values if v.strip()]
+    return bool(filled) and sum(1 for v in filled if to_number(v) is not None) >= NUMBER_SHARE * len(filled)
 
 
 def read_table(path: Path, max_chars: int) -> Table:
@@ -167,7 +216,7 @@ def read_table(path: Path, max_chars: int) -> Table:
         raise InvalidFile("too_long", f"This file has {len(text):,} characters; the limit is {max_chars:,}.")
     delimiter = sniff(text)
     rows = parse(text, delimiter)
-    header = has_header(rows)
+    header = find_header(rows)
     columns = column_names(rows, header)
     if len(columns) > MAX_COLUMNS:
         raise InvalidFile("too_wide", f"This file has {len(columns):,} columns; the limit is {MAX_COLUMNS:,}.")

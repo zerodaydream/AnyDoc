@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from backend.api import chat, documents, models
+from backend.api import admin, chat, documents, models
 from backend.core.config import get_settings
 from backend.core.db import get_engine
 from backend.core.errors import AppError
@@ -75,3 +75,4 @@ app.include_router(documents.router)
 app.include_router(documents.formats_router)
 app.include_router(chat.router)
 app.include_router(models.router)
+app.include_router(admin.router)
