@@ -18,8 +18,9 @@ from markdown_it import MarkdownIt
 from backend.core.errors import InvalidFile
 from backend.document_ir.models import BlockType, ExtractLimits, ExtractResult, IRBlock, TextLocation, TextRegion
 from backend.extraction.formats.text.decode import decode_text
+from backend.extraction.split import MAX_BLOCK_CHARS as MAX_BLOCK_CHARS
+from backend.extraction.split import cut
 
-MAX_BLOCK_CHARS = 2000  # longer blocks are split, preferring line then sentence then word boundaries
 _MD_VERSION = version("markdown-it-py")
 _UNDERLINE = re.compile(r"^\s*(=+|-+)\s*$")
 _NUMBERED = re.compile(r"^\s*\d+(\.\d+)*\.?\s+\S")
@@ -113,23 +114,6 @@ def _markdown_spans(lines: list[str]) -> list[Span]:
     return spans
 
 
-def _cut(text: str, start: int, end: int, limit: int) -> list[tuple[int, int]]:
-    """Split [start, end) into pieces of at most `limit` chars at the best natural boundary."""
-    pieces: list[tuple[int, int]] = []
-    while end - start > limit:
-        window = text[start : start + limit]
-        floor = limit // 2
-        cut = window.rfind("\n", floor)
-        if cut < 0:
-            cut = max(window.rfind(". ", floor), window.rfind("? ", floor), window.rfind("! ", floor))
-            cut = cut + 1 if cut >= 0 else window.rfind(" ", floor)
-        cut = start + (cut + 1 if cut > 0 else limit)
-        pieces.append((start, cut))
-        start = cut
-    pieces.append((start, end))
-    return pieces
-
-
 def _trimmed(text: str, start: int, end: int) -> tuple[int, int]:
     while end > start and text[end - 1].isspace():
         end -= 1
@@ -163,7 +147,7 @@ def extract_text(path: Path, limits: ExtractLimits, markdown: bool) -> ExtractRe
         start, end = _trimmed(text, start, end)
         if start >= end:
             continue
-        for a, b in _cut(text, start, end, MAX_BLOCK_CHARS):
+        for a, b in cut(text, start, end, MAX_BLOCK_CHARS):
             a, b = _trimmed(text, a, b)
             if a >= b:
                 continue

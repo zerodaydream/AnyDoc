@@ -10,7 +10,18 @@ export type PdfLocation = {
 /** Code-point offsets into the decoded, newline-normalised text; lines 1-based inclusive. */
 export type TextRegion = { char_start: number; char_end: number; line_start: number; line_end: number }
 export type TextLocation = { kind: 'text'; regions: TextRegion[] }
-export type SourceLocation = PdfLocation | TextLocation
+/** `para`: n-th rendered paragraph (document order, incl. table cells); offsets are code points into its text. */
+export type DocxRegion = { para: number; char_start: number; char_end: number }
+export type DocxLocation = {
+  kind: 'docx'
+  regions: DocxRegion[]
+  paragraph_start?: number | null
+  paragraph_end?: number | null
+  table?: number | null
+  row_start?: number | null
+  row_end?: number | null
+}
+export type SourceLocation = PdfLocation | TextLocation | DocxLocation
 
 /** Where a citation is, in words: the backend's `ref` ("lines 12–14"); older messages only have a page. */
 export function whereLabel(c: { ref?: string | null; page?: number | null }, capital = false): string {

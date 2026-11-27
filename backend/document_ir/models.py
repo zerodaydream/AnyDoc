@@ -34,8 +34,27 @@ class TextLocation(BaseModel):
     regions: list[TextRegion]
 
 
+class DocxRegion(BaseModel):
+    # `para`: 0-based index of the w:p among all paragraphs the viewer renders, in document order (body,
+    # table cells, content controls; see formats/docx/extractor.py). Offsets are code points into its text.
+    para: int
+    char_start: int
+    char_end: int
+
+
+class DocxLocation(BaseModel):
+    kind: Literal["docx"] = "docx"
+    regions: list[DocxRegion]
+    # For people: 1-based numbers of the non-empty body paragraphs, or the table and its rows.
+    paragraph_start: int | None = None
+    paragraph_end: int | None = None
+    table: int | None = None
+    row_start: int | None = None
+    row_end: int | None = None
+
+
 # New formats add a variant here; consumers switch on `kind`.
-SourceLocation = Annotated[PdfLocation | TextLocation, Field(discriminator="kind")]
+SourceLocation = Annotated[PdfLocation | TextLocation | DocxLocation, Field(discriminator="kind")]
 
 BlockType = Literal["heading", "paragraph", "list_item", "quote", "code", "table"]
 

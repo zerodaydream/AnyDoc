@@ -77,7 +77,7 @@ describe('pdf geometry', () => {
 describe('viewer registry', () => {
   it('selects by validated format only', () => {
     expect(adapters.pdf).toBeTruthy()
-    expect(adapters['docx']).toBeUndefined()
+    expect(adapters['pptx']).toBeUndefined()
   })
 })
 

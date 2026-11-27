@@ -8,4 +8,5 @@ export const adapters: Partial<Record<string, ViewerAdapter>> = {
   pdf: lazy(() => import('../pdf/PdfViewer')),
   text: TextViewer,
   markdown: TextViewer,
+  docx: lazy(() => import('../docx/DocxViewer')),
 }

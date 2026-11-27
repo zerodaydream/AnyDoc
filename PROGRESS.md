@@ -8,6 +8,37 @@ Read this first every session. Update it last.
 - M2 — blocked until the owner supplies evaluation documents in `eval/data/`.
 - **M3 — TXT/Markdown: built and tested; live Gemini eval baseline still to run.** Owner chose (2026-11-26) to do
   M3 ahead of M2 because M2 is blocked.
+- **M4 — DOCX: built and tested on branch `feature/m4-docx` (uncommitted); live-model eval baseline still to run.**
+
+## M4 — DOCX (2026-11-27, owner chose native HTML over LibreOffice → PDF)
+- Format module `backend/extraction/formats/docx/`: OOXML read with stdlib zipfile + ElementTree (no new backend
+  dependency). Paragraph order mirrors docx-preview's traversal (body, table cells, content controls; field codes
+  and deleted text skipped; tabs/line breaks/symbols kept), so `DocxRegion.para` = n-th rendered `<p>` (ADR-0005).
+  Headings from style names / outline level (Title = level 0), list items from numbering, quotes from style.
+  Tables become row blocks (`cell | cell`) with a segment map; a quote across cells = one region per cell.
+  Labels "paragraph 15" / "table 1, rows 2–3"; extent "284 words". Safety: part size cap 64 MB, ratio cap 200×,
+  DTD/ENTITY refused, password-protected / macro-enabled files refused with clear messages.
+- Shared `backend/extraction/split.py` (block cutting) now used by text and DOCX.
+- Viewer `viewers/docx/DocxViewer.tsx` with docx-preview 0.4.1 (new frontend dep, evidence D11): `breakPages: false`,
+  sanitised links/images, paragraph wash + exact quote paint + margin pin, find, zoom (fit-width default, re-fit on
+  resize). Lazy chunk 53 KB gzip.
+- Eval: `eval/datasets/harbor_docx_synthetic.jsonl` (13 answerable + 2 unanswerable) on a generated fictional
+  agreement (`backend/tests/docxgen.py`, deterministic; `uv run python -m backend.tests.docxgen` rewrites the eval
+  file and viewer fixtures). Gold checked with `check_gold.py` (now also DOCX). Runner supports `gold_paras` and
+  generated documents. Harness run OK against the fake model (not recorded). **Not run against Gemini/Groq yet.**
+- Tests: backend 140 (25 new DOCX + API upload→ask→cite + renamed-zip failure), frontend 71 (8 new incl.
+  backend↔viewer paragraph parity on the same .docx, sanitising, offsets across tab/br, highlight/pin, click-through).
+  E2E `frontend/web/e2e/docx-smoke.mjs` green in Brave on an isolated stack (fake model): exact quote painted,
+  pin aligned before/after zoom; dark, light, zoomed, mobile screenshots reviewed.
+
+### M4 known limitations
+- Not tested on real Word-authored files yet — all fixtures are generated. Needs owner samples.
+- Headers, footers, footnotes, endnotes, text boxes and comments are not read for answers (headers/footers/notes
+  and text boxes are shown). Content controls inside table cells are skipped (docx-preview skips them too).
+- Exact-quote paint can be off after a footnote marker in the same paragraph (paragraph wash still correct).
+- Layout is close to Word, not page-exact: one continuous page per section, no page numbers or page jump.
+- Hidden (`vanish`) text is read and may be cited though it isn't visible. Images are shown but not read (OCR is M10).
+- Large-document performance not measured (whole document renders at once; no virtualisation).
 
 ## Groq provider + picker tabs (2026-11-27, owner request, uncommitted, not pushed)
 - `GROQ_API_KEY` adds a Groq tab to the model picker next to Gemini; `backend/llm/router.py` sends each request to
@@ -199,7 +230,9 @@ Read this first every session. Update it last.
 - OK to build the backend Docker image.
 
 ## Next
-1. Restart the dev worker (it predates M3), then run the TXT/MD baselines against Gemini:
+0. Restart the dev API + worker (they predate M4), then run the DOCX baseline:
+   `uv run python -m eval.runners.run_eval eval/datasets/harbor_docx_synthetic.jsonl`; try real .docx files.
+1. Run the TXT/MD baselines against Gemini:
    `uv run python -m eval.runners.run_eval eval/datasets/apache_txt_synthetic.jsonl` and `…/zustand_md_synthetic.jsonl`,
    and re-run `attention_synthetic.jsonl` for PDF regressions (prompt now says `location=` instead of `page=`).
-2. Owner review of M1 + M3. 3. M2 once evaluation documents arrive. 4. M4 DOCX after that.
+2. Owner review of M1 + M3 + M4. 3. M2 once evaluation documents arrive. 4. M5 CSV after that.

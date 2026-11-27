@@ -95,6 +95,14 @@ All text/background pairs are checked to WCAG AA in M1 with an automated contras
   "Front matter · N lines". Images show as dashed alt-text chips (never loaded). Cited block: light evidence wash
   with a clay rule in the margin; the exact quote gets the full `--evidence` wash; pin in the left margin.
 
+## Word viewer (M4, DOCX)
+- docx-preview pages sit on the sunken canvas with a hairline edge and no shadow, like PDF pages. The page keeps
+  the document's own colours, so it stays paper-white in both themes. Opens fitted to the panel width (max 125%),
+  re-fits on resize until the reader zooms by hand.
+- Cited paragraph: the Markdown preview's wash + clay bar, swiped in; the exact quote gets the full `--evidence`
+  wash (CSS Highlight API); the numbered pin sits in the page margin beside the first cited paragraph. A quote
+  across table cells washes each cell's paragraph. Find paints all matches and the current one.
+
 ## Brand mark (2026-11-27, owner artwork)
 - Owner-supplied artwork lives in `frontend/web/src/components/Logo.tsx`: `Wordmark` (page icon + bold Georgia
   "AnyDoc", sidebar and mobile top bar) and `LogoMark` (24×24 artwork, shown at 32 px beside answers). Favicon: `public/favicon.svg`.

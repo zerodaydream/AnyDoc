@@ -520,6 +520,56 @@ body {
   }
 }
 
+/* Word (.docx) viewer: docx-preview pages float on the sunken canvas like PDF pages (hairline, no shadow).
+   The page keeps the document's own colours, so it stays paper-white in both themes. */
+.ad-docx .docx-wrapper {
+  background: transparent;
+  padding: 12px 0 40vh;
+  align-items: center;
+}
+.ad-docx .docx-wrapper > section.docx {
+  box-shadow: none;
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.ad-docx a[href] {
+  color: inherit;
+  text-decoration: underline;
+}
+/* Cited paragraph: same wash + clay bar as the Markdown preview, swiped in left to right. */
+.ad-docx .ad-docx-hit {
+  --ad-hit: color-mix(in srgb, var(--evidence) 45%, transparent);
+  --ad-hit-bar: var(--accent);
+  position: relative;
+  isolation: isolate;
+}
+.ad-docx .ad-docx-hit[data-low='true'] {
+  --ad-hit: rgb(212 165 74 / 0.12);
+  --ad-hit-bar: var(--warn);
+}
+.ad-docx .ad-docx-hit::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 -8px;
+  z-index: -1;
+  background: var(--ad-hit);
+  border-left: 2px solid var(--ad-hit-bar);
+  border-radius: 1px;
+  pointer-events: none;
+  animation: ad-swipe 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ad-docx td .ad-docx-hit::before {
+  inset-inline-start: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ad-docx .ad-docx-hit::before {
+    animation: none;
+  }
+}
+.ad-docx-pin {
+  position: absolute;
+}
+
 /* AnyDoc mark motion. Answers the user's question, so the motion is earned; still when idle. */
 .ad-mark-spark,
 .ad-mark-line {
