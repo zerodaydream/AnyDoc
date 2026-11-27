@@ -1,15 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Moon, PanelLeftClose, Pencil, Plus, Sun, Trash2 } from 'lucide-react'
+import { Moon, PanelLeftClose, Pencil, Plus, ScrollText, Sun, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Tooltip } from '../../components/ui/Tooltip'
 import { api, type SessionOut } from '../../lib/api'
 import { useUi } from '../../stores/ui'
 import { bucket } from './bucket'
 import { Wordmark } from '../../components/Logo'
+import { DeleteNotice } from '../legal/DeleteNotice'
+import { deleteNoticeSeen, markDeleteNoticeSeen } from '../legal/notice'
+import { TermsDialog } from '../legal/TermsDialog'
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions })
   const { sessionId, openSession, toggleSidebar, theme, toggleTheme } = useUi()
+  const [terms, setTerms] = useState(false)
 
   const groups: [string, SessionOut[]][] = []
   // A conversation is listed once it has a first question (its title), or while it is open.
@@ -78,7 +82,17 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           {theme === 'dark' ? 'Light theme' : 'Dark theme'}
         </button>
+        <button
+          onClick={() => setTerms(true)}
+          title="Terms and conditions"
+          aria-label="Terms and conditions"
+          className="ml-auto flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[12px] text-muted hover:bg-surface hover:text-fg"
+        >
+          <ScrollText size={14} aria-hidden />
+          Terms
+        </button>
       </div>
+      {terms && <TermsDialog onClose={() => setTerms(false)} />}
     </nav>
   )
 }
@@ -88,6 +102,8 @@ function SessionRow({ s, active, onOpen }: { s: SessionOut; active: boolean; onO
   const openSession = useUi((st) => st.openSession)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [notice, setNotice] = useState(false) // first delete in this browser: explain, point to the terms
+  const [terms, setTerms] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
   const rename = useMutation({
@@ -96,9 +112,10 @@ function SessionRow({ s, active, onOpen }: { s: SessionOut; active: boolean; onO
   })
   const remove = useMutation({
     mutationFn: () => api.deleteSession(s.id),
-    onSuccess: () => {
+    onSuccess: (r) => {
       if (active) openSession(null)
       void qc.invalidateQueries({ queryKey: ['sessions'] })
+      if (r.document_deleted) void qc.invalidateQueries({ queryKey: ['documents'] })
     },
   })
 
@@ -179,7 +196,7 @@ function SessionRow({ s, active, onOpen }: { s: SessionOut; active: boolean; onO
               <Pencil size={13} />
             </button>
             <button
-              onClick={() => setConfirming(true)}
+              onClick={() => (deleteNoticeSeen() ? setConfirming(true) : setNotice(true))}
               className="grid size-7 place-items-center rounded-md text-muted hover:bg-line hover:text-danger"
               aria-label={`Delete ${title}`}
             >
@@ -188,6 +205,24 @@ function SessionRow({ s, active, onOpen }: { s: SessionOut; active: boolean; onO
           </>
         )}
       </div>
+      {remove.error && (
+        <p role="alert" className="px-2.5 pb-1 text-[12px] leading-4 text-danger">
+          {remove.error.message}
+        </p>
+      )}
+      {notice && (
+        <DeleteNotice
+          title={title}
+          onCancel={() => setNotice(false)}
+          onReadTerms={() => setTerms(true)}
+          onConfirm={() => {
+            markDeleteNoticeSeen()
+            setNotice(false)
+            remove.mutate()
+          }}
+        />
+      )}
+      {terms && <TermsDialog layer={1} onClose={() => setTerms(false)} />}
     </li>
   )
 }

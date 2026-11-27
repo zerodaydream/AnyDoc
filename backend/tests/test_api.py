@@ -264,9 +264,49 @@ async def test_rename_and_delete_session(client: Any) -> None:
     await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "revenue?"})
     r = await client.patch(f"/api/sessions/{doc['sid']}", json={"title": "  Q3   numbers "})
     assert r.json()["title"] == "Q3 numbers"
-    assert (await client.delete(f"/api/sessions/{doc['sid']}")).status_code == 204
+    await _session(client, doc["id"])  # a second conversation about the same document
+    r = await client.delete(f"/api/sessions/{doc['sid']}")
+    assert r.status_code == 200 and r.json() == {"document_deleted": False}
     assert (await client.get(f"/api/sessions/{doc['sid']}/messages")).status_code == 404
-    assert (await client.get(f"/api/documents/{doc['id']}")).json()["status"] == "ready"  # document kept
+    assert (await client.get(f"/api/documents/{doc["id"]}")).json()["status"] == "ready"  # the other one uses it
+
+
+async def test_deleting_the_last_conversation_erases_the_document(client: Any) -> None:
+    from sqlalchemy import func, select
+
+    from backend.core.db import get_sessionmaker
+    from backend.core.models import AuditLog, Block, Chunk, DocumentVersion, Message
+    from backend.storage.local import get_storage
+
+    data = f"Region,Revenue\nWest,120\nEast,{uuid.uuid4().int % 1000}\n".encode()  # bytes no other test stores
+    doc = await _ready_csv(client, data, "erase.csv")
+    await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "What is the Revenue for West?"})
+    async with get_sessionmaker()() as db:
+        key, vid = (
+            await db.execute(
+                select(DocumentVersion.storage_key, DocumentVersion.id).where(DocumentVersion.document_id == doc["id"])
+            )
+        ).one()
+
+    r = await client.delete(f"/api/sessions/{doc['sid']}")
+    assert r.status_code == 200 and r.json() == {"document_deleted": True}
+    assert (await client.get(f"/api/documents/{doc['id']}")).status_code == 404
+    assert doc["id"] not in [d["id"] for d in (await client.get("/api/documents")).json()]
+    async with get_sessionmaker()() as db:
+        for model in (Block, Chunk, Message):
+            assert await db.scalar(select(func.count()).select_from(model).where(model.version_id == vid)) == 0
+        actions = list(await db.scalars(select(AuditLog.action).where(AuditLog.target == doc["id"])))
+        assert "document.delete" in actions  # the record says it happened, with no content
+    with get_storage().local_path(key) as path:
+        assert not path.exists()
+
+
+async def test_deleting_a_conversation_while_its_document_is_processing_is_refused(client: Any) -> None:
+    doc = await _upload(client, sample_report())
+    sid = await _session(client, doc["id"])
+    r = await client.delete(f"/api/sessions/{sid}")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "still_processing"
+    assert (await client.get(f"/api/sessions/{sid}/messages")).status_code == 200  # nothing was deleted
 
 
 async def test_outline_lists_headings(client: Any) -> None:

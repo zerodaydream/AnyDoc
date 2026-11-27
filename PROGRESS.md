@@ -40,6 +40,11 @@ Read this first every session. Update it last.
 - Home: each recent document shows when it was added ("3 min ago"; hover = added + ready times, new
   `DocumentOut.ingested_at`). Files can be dropped anywhere in the app (`FileDrop`, full-window "+" target): the drop
   opens Home and starts a new conversation. Upload flow shared via `features/home/upload.ts`.
+- Deleting a conversation is a hard delete; deleting the **last** conversation about a document also erases the
+  document (file, text, index) via `core/purge.py` (shared with the admin endpoint). 409 while the document is still
+  processing. Response `{document_deleted}`. Sidebar "Terms" opens the terms dialog (`features/legal/terms_and_conditions.json`,
+  must match backend behaviour); the first delete in a browser shows a notice linking to them, later deletes use
+  the inline confirm. Terms text is a plain-language draft, not legal review.
 
 ## M5 — CSV (2026-11-28, ADR-0006, evidence D12)
 - Format module `backend/extraction/formats/csv/`: own RFC 4180 tokeniser (Python csv semantics, but an unclosed

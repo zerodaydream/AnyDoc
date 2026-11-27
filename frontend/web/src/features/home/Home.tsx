@@ -45,7 +45,7 @@ export function Home() {
             <Upload size={19} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-fg">{uploading ? 'Uploading…' : 'Drop a file anywhere'}</p>
+            <p className="text-fg">{uploading ? 'Uploading…' : 'Drag and drop a file'}</p>
             <p className="text-[13px] text-muted">
               {kinds}, up to {MAX_MB} MB
             </p>

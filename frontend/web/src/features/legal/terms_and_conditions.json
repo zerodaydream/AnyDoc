@@ -1,0 +1,39 @@
+{
+  "title": "Terms and conditions",
+  "subtitle": "Your files are not stored by us!",
+  "updated": "November 2026",
+  "sections": [
+    {
+      "heading": "What AnyDoc keeps",
+      "points": [
+        "The file you upload, the text read from it, and a search index of its passages. The index is built on this machine.",
+        "Your conversations: the questions you ask and the answers given."
+      ]
+    },
+    {
+      "heading": "What deleting a conversation removes",
+      "points": [
+        "The conversation, with all its questions and answers.",
+        "If it is the last conversation about a document, the document too: the original file, its text and its search index.",
+        "If other conversations are still about the same document, the document stays until the last of them is deleted.",
+        "Deletion is permanent. Nothing is hidden or kept to restore later, and it can’t be undone.",
+        "A conversation can’t be deleted while its document is still being processed."
+      ]
+    },
+    {
+      "heading": "What stays after deleting",
+      "points": [
+        "An activity record that a deletion happened: when, and internal ids. It holds no file content, questions or answers.",
+        "If this installation keeps database backups, copies may remain in them until those backups expire."
+      ]
+    },
+    {
+      "heading": "Services outside AnyDoc",
+      "points": [
+        "To answer, passages from your document and your question are sent to the AI model you choose (Google Gemini or Groq).",
+        "When a web search runs, a search query is sent to the search service (Tavily or DuckDuckGo).",
+        "Those services keep data under their own terms. Deleting in AnyDoc can’t remove what they hold."
+      ]
+    }
+  ]
+}

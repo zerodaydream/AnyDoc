@@ -165,9 +165,13 @@ export const api = {
     ),
   renameSession: (id: string, title: string) =>
     fetch(`/api/sessions/${id}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ title }) }).then(json<SessionOut>),
-  deleteSession: async (id: string) => {
+  /** Hard delete. `document_deleted`: it was the document's last conversation, so the document was erased too. */
+  deleteSession: async (id: string): Promise<{ document_deleted: boolean }> => {
     const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
-    if (!res.ok && res.status !== 404) throw new ApiError(`http_${res.status}`, 'Could not delete the conversation.')
+    if (res.status === 404) return { document_deleted: false }
+    if (res.status === 409) throw new ApiError('still_processing', 'Its document is still being processed. Try again when it’s ready.')
+    if (!res.ok) throw new ApiError(`http_${res.status}`, 'Could not delete the conversation.')
+    return res.json() as Promise<{ document_deleted: boolean }>
   },
   messages: (sessionId: string) => fetch(`/api/sessions/${sessionId}/messages`).then(json<MessageOut[]>),
   upload: (file: File) =>

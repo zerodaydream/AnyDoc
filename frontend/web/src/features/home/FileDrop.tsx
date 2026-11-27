@@ -8,7 +8,7 @@ const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types]
 const fileCount = (e: DragEvent) => [...(e.dataTransfer?.items ?? [])].filter((i) => i.kind === 'file').length
 
 /**
- * Drop a file anywhere in the app (Home, the conversation list, an open conversation): a full-window target with a
+ * Drop a file in the app (Home, the conversation list, an open conversation): a full-window target with a
  * "+" appears, and the drop opens the Home screen and starts a new conversation about that file.
  */
 export function FileDrop({ children }: { children: ReactNode }) {

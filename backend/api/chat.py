@@ -6,10 +6,10 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.answering.engine import answer_stream
@@ -17,6 +17,7 @@ from backend.core.config import clamp_level, get_settings
 from backend.core.db import session_dep
 from backend.core.errors import NotFound
 from backend.core.models import AuditLog, ChatSession, Document, DocumentVersion, Message
+from backend.core.purge import ensure_not_busy, purge_document
 from backend.security.auth import Principal, get_principal
 
 router = APIRouter(prefix="/api/sessions", tags=["chat"])
@@ -149,15 +150,36 @@ async def rename_session(
     return _out(await _get(db, p, session_id))
 
 
-@router.delete("/{session_id}", status_code=204)
+class DeletedOut(BaseModel):
+    document_deleted: bool  # this was the document's last conversation, so the document went too
+
+
+@router.delete("/{session_id}")
 async def delete_session(
     session_id: uuid.UUID, p: Principal = Depends(get_principal), db: AsyncSession = Depends(session_dep)
-) -> Response:
+) -> DeletedOut:
+    """Hard delete: the conversation and its messages. When no other conversation is about the same document, the
+    document goes too: its original file, extracted text and search index (core/purge.py). Nothing is soft-deleted."""
     chat = (await _get(db, p, session_id))[0]
-    await db.delete(chat)  # messages cascade; the document and its index stay
+    others = await db.scalar(
+        select(func.count())
+        .select_from(ChatSession)
+        .where(
+            ChatSession.document_id == chat.document_id,
+            ChatSession.id != chat.id,
+            ChatSession.owner_id == p.owner_id,
+        )
+    )
+    last = not others
+    if last:
+        await ensure_not_busy(db, p, chat.document_id)  # nothing is deleted while ingestion still writes rows
+    document_id = chat.document_id
+    await db.delete(chat)  # messages cascade
     db.add(_audit(p, "session.delete", session_id))
     await db.commit()
-    return Response(status_code=204)
+    if last:
+        await purge_document(db, p, document_id, reason="last_conversation_deleted")
+    return DeletedOut(document_deleted=last)
 
 
 @router.get("/{session_id}/messages")
