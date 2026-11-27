@@ -80,7 +80,7 @@ export type WebResult = {
   segments: { text: string; sources: number[] }[]
   sources: { title: string; uri: string; domain: string }[]
   search_queries: string[]
-  entry_html: string | null
+  engine?: string // the search engine that ran the query
   note: string | null
 }
 

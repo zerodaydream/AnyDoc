@@ -2,8 +2,9 @@
 
 Events: meta, text_delta, citation, segment_retracted, suggestion, web_searching, web, done, error.
 The suggestion is an uncited next-step hint, sent only for answers that cite something.
-When the document can't answer (or the model asks for a web query) and WEB_SEARCH_ENABLED is on, one grounded web
-lookup runs; its result is a separate `web` event, never mixed into the document answer or its citations.
+When the document can't answer (or the model asks for a web query) and WEB_SEARCH_ENABLED is on, the web search
+tool runs (answering/web.py); its result is a separate `web` event, never mixed into the document answer or its
+citations.
 Text streams immediately; a citation is emitted only after it validates; a segment whose
 evidence fails is retracted. Locations come from the IR, never from the model.
 """
@@ -23,6 +24,7 @@ from pydantic_core import from_json
 from sqlalchemy import func, select
 
 from backend.answering.computed import computed_blocks
+from backend.answering.web import web_lookup
 from backend.core.config import get_settings
 from backend.core.db import get_sessionmaker
 from backend.core.errors import TransientError
@@ -30,12 +32,13 @@ from backend.core.models import AuditLog, Block, ChatSession, Document, Document
 from backend.extraction.registry import describe, query_tool
 from backend.grounding.validator import EvidenceBlock, validate_segment
 from backend.indexing.embeddings import get_embedder
-from backend.llm.base import AnswerOut, UnsupportedOption, WebResult, WebSearchUnavailable
+from backend.llm.base import AnswerOut, UnsupportedOption, WebResult
 from backend.llm.factory import get_llm
 from backend.llm.prompts import SYSTEM, build_prompt
 from backend.observability.tracing import trace_metadata, traced
 from backend.retrieval.retriever import Retrieved, closest_blocks, retrieve
 from backend.security.auth import Principal
+from backend.websearch.factory import get_web_search
 
 log = logging.getLogger(__name__)
 Event = dict[str, Any]
@@ -139,23 +142,6 @@ class AnswerSession:
             self.s.suggestion = tip
             out.append(_ev("suggestion", text=tip))
         return status, out
-
-
-async def _web_lookup(
-    llm: Any, question: str, query: str, title: str, usage: dict[str, Any], model: str, thinking: str | None
-) -> WebResult:
-    """Fast: the model's cheapest enabled thinking level. Failures degrade to `unavailable`, never an error."""
-    levels, _ = get_settings().thinking_for(model)
-    try:
-        result: WebResult = await llm.web_answer(
-            question, query, title, usage, model=model, thinking=(levels[0] if thinking and levels else None)
-        )
-        return result
-    except WebSearchUnavailable as e:
-        return WebResult(status="unavailable", query=query, note=str(e))
-    except Exception:
-        log.exception("web_lookup_failed")
-        return WebResult(status="unavailable", query=query, note="Web search failed.")
 
 
 # Shown to the reader as-is, live and in history. Plain words, what happened, what to do next.
@@ -342,7 +328,9 @@ async def answer_stream(
             if s.web_search_enabled and (status == "insufficient_evidence" or session.s.web_query):
                 query = session.s.web_query or " ".join(question.split())[:_MAX_WEB_QUERY]
                 yield _ev("web_searching", query=query)
-                web = await _web_lookup(llm, question, query, doc.title, usage, model or llm.model_id, thinking)
+                web = await web_lookup(
+                    llm, get_web_search(), question, query, doc.title, usage, model or llm.model_id, thinking
+                )
                 yield _ev("web", **web.model_dump())
             usage["total_ms"] = int((time.perf_counter() - started) * 1000)
             yield _ev("done", status=status, usage=usage, closest=closest)

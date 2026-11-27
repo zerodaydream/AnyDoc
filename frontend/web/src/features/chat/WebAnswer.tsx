@@ -3,7 +3,7 @@ import type { WebResult } from '../../lib/api'
 
 /**
  * Web lookup shown under a document answer. Kept visibly apart: it is not from the document and never uses the
- * document's citation pills. Only text the search grounding attributed to a source arrives here.
+ * document's citation pills. Only segments whose quotes the backend found in their sources arrive here.
  */
 export function WebAnswer({ web, searching }: { web?: WebResult | null; searching?: string | null }) {
   if (!web && !searching) return null
@@ -13,6 +13,7 @@ export function WebAnswer({ web, searching }: { web?: WebResult | null; searchin
         <Globe size={14} className="text-accent" aria-hidden />
         <span className="font-medium text-fg">From the web</span>
         <span>· not from your document</span>
+        {web?.engine && <span className="ml-auto">via {web.engine}</span>}
       </header>
 
       {!web ? (
@@ -57,7 +58,6 @@ export function WebAnswer({ web, searching }: { web?: WebResult | null; searchin
               ) : null,
             )}
           </ol>
-          {web.entry_html && <SearchChip html={web.entry_html} />}
         </>
       ) : (
         <p className="mt-2 text-[14px] text-muted">
@@ -67,20 +67,5 @@ export function WebAnswer({ web, searching }: { web?: WebResult | null; searchin
         </p>
       )}
     </section>
-  )
-}
-
-/**
- * Google's search-suggestion chip, which must accompany grounded results. It is third-party HTML, so it runs in a
- * sandboxed frame: no scripts, no access to the app; its links open in a new tab.
- */
-function SearchChip({ html }: { html: string }) {
-  return (
-    <iframe
-      title="Google Search suggestions"
-      sandbox="allow-popups allow-popups-to-escape-sandbox"
-      srcDoc={`<!doctype html><base target="_blank"><body style="margin:0">${html}</body>`}
-      className="mt-2 h-[52px] w-full border-0"
-    />
   )
 }

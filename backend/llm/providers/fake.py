@@ -8,11 +8,12 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.llm.base import Delta, WebResult, WebSegment, WebSource
+from backend.llm.base import Delta
 
 _BLOCK = re.compile(r'<document_block id="([^"]+)"[^>]*>\n?(.*?)\n?</document_block>', re.S)
 _QUESTION = re.compile(r"<question>\n?(.*?)\n?</question>", re.S)
 _WORD = re.compile(r"[^\W_]{3,}")
+_SOURCE = re.compile(r'<source n="(\d+)"[^>]*>\n?(.*?)\n?</source>', re.S)
 _COLUMN = re.compile(r'<column name="([^"]*)" type="([^"]*)"[^>]*? examples="([^"]*)"/>')
 _COMPUTE = (
     ("total", "sum"),
@@ -58,6 +59,17 @@ class FakeProvider:
         model: str | None = None,
         thinking: str | None = None,
     ) -> AsyncIterator[Delta]:
+        if schema.__name__ == "WebAnswerOut":  # answer from the first search hit, quoting it
+            src = _SOURCE.search(prompt)
+            web: dict[str, Any] = {"status": "not_found", "segments": []}
+            if src:
+                quote = " ".join(src.group(2).split()[:12])
+                web = {
+                    "status": "answered",
+                    "segments": [{"text": f"A web source says: {quote}", "evidence": [{"source": 1, "quote": quote}]}],
+                }
+            yield ("text", json.dumps(web))
+            return
         if schema.__name__ == "TablePlan":
             raw = json.dumps(_table_plan(prompt))
             usage.update(model=model or self.model_id, input_tokens=len(prompt) // 4, output_tokens=len(raw) // 4)
@@ -92,25 +104,6 @@ class FakeProvider:
         for i in range(0, len(raw), 24):
             yield ("text", raw[i : i + 24])
         usage.update(model=model or self.model_id, input_tokens=len(prompt) // 4, output_tokens=len(raw) // 4)
-
-    async def web_answer(
-        self,
-        question: str,
-        query: str,
-        title: str,
-        usage: dict[str, Any],
-        *,
-        model: str | None = None,
-        thinking: str | None = None,
-    ) -> WebResult:
-        return WebResult(
-            status="answered",
-            query=query,
-            segments=[WebSegment(text=f"A web source explains: {query}.", sources=[0])],
-            sources=[WebSource(title="Example reference", uri="https://example.org/ref", domain="example.org")],
-            search_queries=[query],
-            entry_html=None,
-        )
 
     async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:
         return [

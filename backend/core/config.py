@@ -96,9 +96,14 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 8
     quote_fuzzy_min: float = Field(90.0, ge=50, le=100)
     history_turns: int = 6
-    # Web lookup (Gemini Google Search grounding) when the document can't answer. Sends the question and a search
-    # query (never document text) to Google; off unless config.json or env turns it on.
+    # Web lookup when the document can't answer: the answer model asks for it with `web_query`, a search engine runs
+    # it (backend/websearch/), and a second call answers only from the hits, quoting them. Sends the search query
+    # (never document text) to the engine; off unless config.json or env turns it on.
     web_search_enabled: bool = False
+    web_search_provider: str = "auto"  # auto (Tavily with a key, else ddgs) | tavily | ddgs
+    tavily_api_key: str = ""
+    web_search_max_results: int = 5
+    web_search_timeout_s: float = 15.0
 
     embed_provider: str = "local"
     embed_model: str = "microsoft/harrier-oss-v1-270m"

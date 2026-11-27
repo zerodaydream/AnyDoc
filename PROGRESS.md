@@ -11,6 +11,18 @@ Read this first every session. Update it last.
 - **M4 — DOCX: built and tested, committed on `feature/m4-docx`; live-model eval baseline still to run.**
 - **M5 — CSV: built and tested on branch `feature/m5-csv` (uncommitted); live-model eval baseline still to run.**
 
+## Web search as a separate tool (2026-11-28, owner request, D13, uncommitted)
+- Google Search grounding removed (Gemini `web_answer`, `grounded_result`, the sandboxed Google chip). Providers no
+  longer do web search; `backend/websearch/` (`WebSearch` interface: Tavily via httpx, keyless `ddgs`) +
+  `backend/answering/web.py` (provider-independent: Gemini and Groq). The answer schema's `web_query` is the tool
+  call. Web answers quote numbered sources; segments kept only if quotes are found and numbers appear in the sources.
+- Config: `WEB_SEARCH_PROVIDER` (auto|tavily|ddgs), `TAVILY_API_KEY` (.env), `WEB_SEARCH_MAX_RESULTS`=5,
+  `WEB_SEARCH_TIMEOUT_S`=15. New deps: `ddgs` 9.16.1 (MIT), `httpx` made direct. UI shows "via <engine>".
+- Tests: backend 245 (`test_websearch.py` 13: Tavily request/mapping/errors, ddgs mapping/empty/throttle, engine
+  choice, quote + number verification, lookup states, prompt; API web tests use a test engine). Frontend 98.
+- Live: ddgs + Gemini and ddgs + Groq both answered "BLEU stands for bilingual evaluation understudy" with a verified
+  Wikipedia quote. ddgs measured flaky (throttled minutes after a burst). Tavily not tried live (no key).
+
 ## M5 — CSV (2026-11-28, ADR-0006, evidence D12)
 - Format module `backend/extraction/formats/csv/`: own RFC 4180 tokeniser (Python csv semantics, but an unclosed
   quote fails the file), deterministic delimiter (`,` tab `;` `|`) and header rules, decoding shared with TXT.

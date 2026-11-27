@@ -11,15 +11,7 @@ from google.genai import errors, types
 from pydantic import BaseModel
 
 from backend.core.errors import TransientError
-from backend.llm.base import (
-    Delta,
-    UnsupportedOption,
-    WebResult,
-    WebSearchUnavailable,
-    WebSegment,
-    WebSource,
-)
-from backend.llm.prompts import WEB_SYSTEM, build_web_prompt
+from backend.llm.base import Delta, UnsupportedOption
 
 log = logging.getLogger(__name__)
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
@@ -103,45 +95,6 @@ class GeminiProvider:
                 raise TransientError(f"gemini {e.code}") from e
             raise
 
-    async def web_answer(
-        self,
-        question: str,
-        query: str,
-        title: str,
-        usage: dict[str, Any],
-        *,
-        model: str | None = None,
-        thinking: str | None = None,
-    ) -> WebResult:
-        """One Google Search grounded call (no response schema: search + schema is unreliable, see D9)."""
-        model = model or self.model_id
-        config = types.GenerateContentConfig(
-            system_instruction=WEB_SYSTEM,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
-            thinking_config=(
-                types.ThinkingConfig(thinking_level=types.ThinkingLevel(thinking.upper())) if thinking else None
-            ),
-        )
-        started = time.perf_counter()
-        try:  # SDK retries transient errors with backoff
-            r = await self._client.aio.models.generate_content(
-                model=model, contents=build_web_prompt(question, query, title), config=config
-            )
-        except errors.APIError as e:
-            log.warning("gemini_web_failed", extra={"model": model, "code": e.code})
-            if e.code == 429:
-                raise WebSearchUnavailable("Web search quota is used up for this API key.") from e
-            raise WebSearchUnavailable(f"Web search failed ({e.code}).") from e
-        um = r.usage_metadata
-        usage.update(
-            web_model=model,
-            web_input_tokens=(um.prompt_token_count or 0) if um else 0,
-            web_output_tokens=(um.candidates_token_count or 0) if um else 0,
-            web_ms=int((time.perf_counter() - started) * 1000),
-        )
-        gm = r.candidates[0].grounding_metadata if r.candidates else None
-        return grounded_result(query, gm)
-
     async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:
         async def one(mid: str) -> dict[str, Any]:
             failed_at = self._failed.get(mid)
@@ -191,30 +144,3 @@ class GeminiProvider:
         Ping.model_validate_json(r.text or "")
         out["structured_output"] = True
         return out
-
-
-def grounded_result(query: str, gm: types.GroundingMetadata | None) -> WebResult:
-    """Keep only text that grounding attributes to a web source; no attributed text means no answer."""
-    if gm is None:
-        return WebResult(status="not_found", query=query)
-    chunks = [c.web for c in gm.grounding_chunks or [] if c.web and c.web.uri]
-    sources = [WebSource(title=c.title or c.domain or "source", uri=c.uri or "", domain=c.domain or "") for c in chunks]
-    segments: list[WebSegment] = []
-    for sup in sorted(gm.grounding_supports or [], key=lambda x: (x.segment.start_index or 0) if x.segment else 0):
-        text = (sup.segment.text or "").strip() if sup.segment else ""
-        idx = sorted({i for i in sup.grounding_chunk_indices or [] if 0 <= i < len(sources)})
-        if not text or not idx:
-            continue
-        if segments and segments[-1].text == text:
-            segments[-1].sources = sorted({*segments[-1].sources, *idx})
-        else:
-            segments.append(WebSegment(text=text, sources=idx))
-    entry = gm.search_entry_point.rendered_content if gm.search_entry_point else None
-    return WebResult(
-        status="answered" if segments else "not_found",
-        query=query,
-        segments=segments,
-        sources=sources,
-        search_queries=list(gm.web_search_queries or []),
-        entry_html=entry or None,
-    )

@@ -225,6 +225,8 @@ Not measured yet on a 2M-character file.
 
 ## D9. Web lookup for questions the document can't answer — added 2026-11-26
 
+**Superseded by D13 (2026-11-28):** Google Search grounding was removed; web search is now a separate tool.
+
 **Problem (owner request).** Example: the Attention paper uses "BLEU" without expanding it, so the document-grounded
 answer correctly abstains. The owner wants a factual web answer in that case, triggered automatically when the
 document can't answer or when the model says a search is needed.
@@ -395,3 +397,46 @@ sticky header row and row-number gutter, `role=grid` semantics, cell washes, gut
 with `Decimal`), frontend 27 tests, e2e `frontend/web/e2e/csv-smoke.mjs` green in Brave on an isolated stack (fake
 model). **Not verified:** real exports (Excel, Sheets, databases), files near the size limit, live-model planning
 quality (no eval run against Gemini/Groq yet).
+
+## D13. Web search as a separate tool (replaces D9's Google grounding) — added 2026-11-28
+
+**Problem (owner request).** Drop Gemini's built-in Google Search grounding; give the model a separate web search
+tool, using the best free option, with well-structured context instead of a pile of text. D9's path also never
+worked live (the key's tier returned 429 on every grounded call) and Groq had no web search at all.
+
+**How the model uses the tool.** The answer schema's `web_query` field is the tool call: the model fills it when
+the blocks can't answer (or abstains). That works the same on Gemini and Groq, with no provider tool-calling code.
+The engine runs the query; one structured call (`WebAnswerOut`) answers from numbered `<source n title domain>`
+elements only, each segment citing `{source, quote}`. The backend keeps a segment only if a quote is found in the
+named source (exact, normalised, then fuzzy ≥ `QUOTE_FUZZY_MIN`) and every number in it appears in those sources:
+the document citation rules. Source text is passed verbatim (only `</source` is neutralised) so quotes match it.
+
+**Engines compared (2026-11-28).**
+- **`ddgs` 9.16.1** (renamed from `duckduckgo-search`; MIT per installed metadata; deps `primp` 2.0.1 MIT, `lxml`,
+  `click`). Keyless metasearch that reads engines' result pages (DuckDuckGo, Bing, Brave, Google, Yahoo, Mojeek,
+  Wikipedia, …), `backend="auto"` rotates them. Results are `{title, href, body}` with ~250–400-char snippets.
+  **Measured unreliable:** first query 5 hits in 4.3 s; minutes later, 15 of 18 engine/query combinations returned
+  "No results found" (throttling), `auto` 1 of 2. Two later live lookups succeeded (4–8 s). Unofficial scraping of
+  engines' pages: acceptable locally, not a basis for a hosted service.
+- **Tavily Search API** (docs.tavily.com, read 2026-11-28): "1,000 free API Credits every month. No credit card
+  required."; basic search = 1 credit; returns per result `title`, `url`, `content` (up to 3 chunks of ~500 chars,
+  `chunks_per_source`), relevance `score`; auth `Authorization: Bearer`. Built for LLM context. Called with httpx
+  (no SDK). **Not verified live** (no key yet). Rate limit not stated in the docs.
+- Brave Search API: ~$5 monthly credit (≈1,000 queries); comparison pages disagree on whether a card is required
+  ([parallel.ai](https://parallel.ai/articles/best-free-web-search-api), [cloro.dev](https://cloro.dev/blog/best-search-api/)). Not built; same interface would take it.
+- SearXNG: free if self-hosted, AGPL-3.0 — excluded from the hosted path by CLAUDE.md.
+- **LangChain wrappers: not used.** `DuckDuckGoSearchResults` (langchain-community 0.4.2) returns the same
+  title/link/snippet as `ddgs`, as a joined string, JSON string or list of dicts
+  ([reference](https://reference.langchain.com/python/langchain-community/tools/ddg_search/tool/DuckDuckGoSearchResults)).
+  It adds no context, only langchain-core/community. The structure the model needs (numbered sources, title,
+  domain, verbatim text) is 10 lines in `build_web_prompt`.
+
+**Selection.** `WEB_SEARCH_PROVIDER=auto`: Tavily when `TAVILY_API_KEY` is set (best free quality and LLM-ready
+chunks), else `ddgs` (free, no account, flaky). `tavily` / `ddgs` force one. Interface `backend/websearch/` so
+Brave or others drop in. Search failures and malformed answers become `unavailable` with a note; the document answer
+is never affected.
+
+**Verified live (2026-11-28):** `ddgs` + gemini-3.5-flash-lite → "BLEU stands for bilingual evaluation
+understudy." citing en.wikipedia.org, quote verified (search 8.3 s, answer 0.9 s, 797 input tokens); `ddgs` +
+qwen/qwen3.8-27b (Groq) → same answer citing 2 sources (search 4.1 s). **Not verified:** Tavily live, hit quality
+over many queries, how often `ddgs` is throttled over a day.

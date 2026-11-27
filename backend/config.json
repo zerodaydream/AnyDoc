@@ -41,6 +41,9 @@
   },
 
   "WEB_SEARCH_ENABLED": true,
+  "WEB_SEARCH_PROVIDER": "auto",
+  "WEB_SEARCH_MAX_RESULTS": 5,
+  "WEB_SEARCH_TIMEOUT_S": 15,
 
   "EMBED_PROVIDER": "local",
   "EMBED_MODEL": "microsoft/harrier-oss-v1-270m",

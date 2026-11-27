@@ -29,14 +29,16 @@ Restart the API and worker after editing.
 Groq: set `GROQ_API_KEY` in `.env` and the model picker gets a Groq tab next to Gemini (`LLM_PROVIDER=groq` makes it
 the default). Each request goes to the provider of the model picked. Groq models and their thinking levels come from
 `GROQ_MODELS_ENABLED` in `config.json` (`"off*"` makes answering directly the default). Each Groq answer is one
-JSON-mode call, so it appears at once rather than streamed; web lookup needs Gemini. `GROQ_CONTEXT_TOKEN_BUDGET`
+JSON-mode call, so it appears at once rather than streamed. `GROQ_CONTEXT_TOKEN_BUDGET`
 (default 4000) caps the document text per answer, because the free plan allows 7,000 input tokens a minute.
 
-Web lookup (`WEB_SEARCH_ENABLED`): when the document can't answer, or the model says a term needs a web search,
-one Gemini call grounded with Google Search runs. Its answer appears under the document answer as "From the web",
-with source links and Google's search-suggestion chip, and is never mixed into document citations. The question,
-a search query and the document title are sent to Google; document text never is. This needs a key whose tier
-includes search grounding.
+Web lookup (`WEB_SEARCH_ENABLED`): when the document can't answer, or the answer model asks for a search
+(`web_query`), a web search tool runs the query and the picked model (Gemini or Groq) answers from the numbered hits,
+quoting them; only segments whose quotes are found in their sources are kept. It appears under the document answer
+as "From the web", with source links, and is never mixed into document citations. Engine (`WEB_SEARCH_PROVIDER`):
+`auto` uses Tavily when `TAVILY_API_KEY` is set (free plan: 1,000 searches a month, no card), otherwise keyless
+`ddgs` (DuckDuckGo and other engines; free but often throttled). The search query goes to the engine and the hits'
+text to the model; document text is never sent to the engine.
 
 The worker uses the Apple GPU (MPS, bf16) when run natively. Startup fails loudly if a configured Gemini or Groq model does not exist or the key is invalid; an overloaded model (HTTP 503) only logs a warning.
 

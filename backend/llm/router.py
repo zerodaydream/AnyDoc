@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.llm.base import Delta, LLMProvider, WebResult
+from backend.llm.base import Delta, LLMProvider
 
 
 class RoutedProvider:
@@ -31,19 +31,6 @@ class RoutedProvider:
     ) -> AsyncIterator[Delta]:
         model = model or self.model_id
         return self._pick(model).stream_json(system, prompt, schema, usage, model=model, thinking=thinking)
-
-    async def web_answer(
-        self,
-        question: str,
-        query: str,
-        title: str,
-        usage: dict[str, Any],
-        *,
-        model: str | None = None,
-        thinking: str | None = None,
-    ) -> WebResult:
-        model = model or self.model_id
-        return await self._pick(model).web_answer(question, query, title, usage, model=model, thinking=thinking)
 
     async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:
         meta: dict[str, dict[str, Any]] = {}

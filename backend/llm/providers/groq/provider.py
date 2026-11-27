@@ -19,7 +19,7 @@ import groq
 from pydantic import BaseModel
 
 from backend.core.errors import TransientError
-from backend.llm.base import Delta, UnsupportedOption, WebResult, WebSearchUnavailable
+from backend.llm.base import Delta, UnsupportedOption
 
 log = logging.getLogger(__name__)
 _RETRYABLE = {408, 429, 498, 500, 502, 503, 504}  # 498: Groq flex tier at capacity
@@ -97,18 +97,6 @@ class GroqProvider:
         if thinking and message.reasoning:
             yield ("thought", message.reasoning)
         yield ("text", message.content or "")
-
-    async def web_answer(
-        self,
-        question: str,
-        query: str,
-        title: str,
-        usage: dict[str, Any],
-        *,
-        model: str | None = None,
-        thinking: str | None = None,
-    ) -> WebResult:
-        raise WebSearchUnavailable("Web search needs the Gemini provider.")
 
     async def describe_models(self, model_ids: list[str]) -> list[dict[str, Any]]:
         if any(m not in self._meta for m in model_ids):

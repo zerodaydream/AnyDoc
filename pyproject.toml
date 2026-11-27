@@ -5,9 +5,11 @@ description = "Document intelligence workspace with grounded, verifiable citatio
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "alembic>=1.20.1",
+    "ddgs>=9.16.1",
     "fastapi>=0.165.0",
     "google-genai>=3.6.1",
     "groq>=1.7.0",
+    "httpx>=0.28.1",
     "langsmith>=0.16.2",
     "markdown-it-py>=4.3.0",
     "pgvector>=0.5.1",

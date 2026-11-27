@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from backend.core.errors import TransientError
-from backend.llm.base import AnswerOut, UnsupportedOption, WebSearchUnavailable
+from backend.llm.base import AnswerOut, UnsupportedOption
 from backend.llm.providers.fake import FakeProvider
 from backend.llm.providers.groq.provider import GroqProvider
 
@@ -139,11 +139,6 @@ async def test_check_fails_loudly_on_a_missing_model() -> None:
 
     with pytest.raises(RuntimeError, match="no access"):
         await _provider(handler).check()
-
-
-async def test_web_lookup_is_unavailable() -> None:
-    with pytest.raises(WebSearchUnavailable):
-        await _provider(_error(500)).web_answer("q", "q", "t", {})
 
 
 def test_factory_routes_only_providers_with_a_key(monkeypatch: pytest.MonkeyPatch) -> None:

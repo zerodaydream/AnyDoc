@@ -140,7 +140,7 @@ def match_quote(quote: str, content: str, fuzzy_min: float) -> tuple[int, int, s
     return cmap[al.dest_start], cmap[al.dest_end - 1] + 1, "fuzzy", al.score
 
 
-def _numbers(text: str) -> set[str]:
+def numbers_in(text: str) -> set[str]:
     return {m.group().replace(",", "").replace("−", "-").rstrip("%") for m in _NUM.finditer(text)}
 
 
@@ -187,7 +187,7 @@ def validate_segment(
 
     by_id = {b.block_id: b for b in blocks.values()}
     cited_text = " ".join(by_id[c.block_id].content for c in citations)
-    missing = _numbers(text) - _numbers(cited_text)
+    missing = numbers_in(text) - numbers_in(cited_text)
     if missing:
         return SegmentVerdict([], rejected, ok=False, reason="unverified_number")
 

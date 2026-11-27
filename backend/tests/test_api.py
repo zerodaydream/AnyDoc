@@ -634,11 +634,40 @@ def test_config_json_is_valid_and_env_overrides_it(monkeypatch: pytest.MonkeyPat
     assert Settings().app_env == "staging"
 
 
-async def test_web_lookup_runs_when_document_cannot_answer(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+class _Engine:
+    name = "Test search"
+
+    def __init__(self, fail: str | None = None) -> None:
+        self.fail, self.queries = fail, []  # type: ignore[var-annotated]
+
+    async def search(self, query: str, max_results: int) -> list[Any]:
+        from backend.websearch.base import SearchHit, SearchUnavailable
+
+        self.queries.append(query)
+        if self.fail:
+            raise SearchUnavailable(self.fail)
+        return [
+            SearchHit(
+                "Zebra facts",
+                "https://example.org/zebra",
+                "example.org",
+                "Plains zebras migrate up to 500 km each year across the Serengeti.",
+            )
+        ]
+
+
+def _use_engine(monkeypatch: pytest.MonkeyPatch, engine: _Engine) -> _Engine:
+    from backend.answering import engine as answer_engine
     from backend.core.config import get_settings
 
-    doc = await _ready_doc(client)
+    monkeypatch.setattr(answer_engine, "get_web_search", lambda: engine)
     monkeypatch.setattr(get_settings(), "web_search_enabled", True)
+    return engine
+
+
+async def test_web_lookup_runs_when_document_cannot_answer(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    doc = await _ready_doc(client)
+    engine = _use_engine(monkeypatch, _Engine())
     r = await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "zebra migration patterns"})
     events = _sse(r.text)
     kinds = [k for k, _ in events]
@@ -646,6 +675,9 @@ async def test_web_lookup_runs_when_document_cannot_answer(client: Any, monkeypa
     web = dict(events)["web"]
     assert web["status"] == "answered" and web["query"] == "zebra migration patterns"
     assert web["segments"][0]["sources"] == [0] and web["sources"][0]["uri"].startswith("https://")
+    assert "500 km" in web["segments"][0]["text"] and web["engine"] == "Test search"
+    assert engine.queries == ["zebra migration patterns"]
+    assert events[-1][1]["usage"]["web_engine"] == "Test search"
     assert events[-1][1]["status"] == "insufficient_evidence"  # the document answer is still an abstention
     assert not any(k == "citation" for k in kinds)  # web text never becomes a document citation
 
@@ -654,27 +686,18 @@ async def test_web_lookup_runs_when_document_cannot_answer(client: Any, monkeypa
 
 
 async def test_web_lookup_off_by_flag_and_skipped_when_answered(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.core.config import get_settings
-
     doc = await _ready_doc(client)
     url = f"/api/sessions/{doc['sid']}/messages"
     kinds = [k for k, _ in _sse((await client.post(url, json={"question": "zebra migration patterns"})).text)]
     assert "web_searching" not in kinds  # flag off (the default)
-    monkeypatch.setattr(get_settings(), "web_search_enabled", True)
+    engine = _use_engine(monkeypatch, _Engine())
     kinds = [k for k, _ in _sse((await client.post(url, json={"question": "What was third quarter revenue?"})).text)]
     assert "citation" in kinds and "web_searching" not in kinds  # answered from the document, no web query
+    assert engine.queries == []
 
 
 async def test_web_lookup_failure_degrades(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.core.config import get_settings
-    from backend.llm.base import WebSearchUnavailable
-    from backend.llm.providers.fake import FakeProvider
-
-    async def quota(*a: Any, **kw: Any) -> Any:
-        raise WebSearchUnavailable("Web search quota is used up for this API key.")
-
-    monkeypatch.setattr(FakeProvider, "web_answer", quota)
-    monkeypatch.setattr(get_settings(), "web_search_enabled", True)
+    _use_engine(monkeypatch, _Engine(fail="Web search quota is used up for now."))
     doc = await _ready_doc(client)
     events = _sse((await client.post(f"/api/sessions/{doc['sid']}/messages", json={"question": "zebra herds"})).text)
     web = dict(events)["web"]

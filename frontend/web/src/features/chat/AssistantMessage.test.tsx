@@ -62,7 +62,7 @@ describe('AssistantMessage', () => {
         { title: 'Unused', uri: 'https://unused.example', domain: 'unused.example' },
       ],
       search_queries: [],
-      entry_html: '<div>chip</div>',
+      engine: 'Tavily',
       note: null,
     }
     a = applyEvent(applyEvent(a, { event: 'web', data: web }), { event: 'done', data: { status: 'insufficient_evidence' } })
@@ -71,12 +71,12 @@ describe('AssistantMessage', () => {
     expect(screen.getByRole('link', { name: /Example reference/ })).toHaveAttribute('href', 'https://example.org/bleu')
     expect(screen.queryByText(/Unused/)).toBeNull() // only sources that back a sentence are listed
     expect(screen.queryByRole('button', { name: /^Citation/ })).toBeNull()
-    const chip = container.querySelector('iframe')!
-    expect(chip.getAttribute('sandbox')).toBe('allow-popups allow-popups-to-escape-sandbox') // no scripts
+    expect(screen.getByText('via Tavily')).toBeInTheDocument()
+    expect(container.querySelector('iframe')).toBeNull() // no third-party HTML any more
   })
 
   it('explains an unavailable web lookup', () => {
-    const web = { status: 'unavailable' as const, query: 'q', segments: [], sources: [], search_queries: [], entry_html: null, note: 'Web search quota is used up for this API key.' }
+    const web = { status: 'unavailable' as const, query: 'q', segments: [], sources: [], search_queries: [], note: 'Web search quota is used up for this API key.' }
     render(<AssistantMessage id="w2" status="insufficient_evidence" segments={[]} web={web} />)
     expect(screen.getByText('Web search quota is used up for this API key.')).toBeInTheDocument()
   })
