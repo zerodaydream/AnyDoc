@@ -1,6 +1,6 @@
 # Architecture
 
-Status: **M1 implemented** (PDF slice); **M3 implemented** (TXT/Markdown, ADR-0004). Deviations from the M0 plan are listed in `PROGRESS.md` → "Decisions made during M1". Technology choices and their evidence: `docs/TECHNOLOGY_EVALUATION.md`. Architectural decisions: `docs/adr/`.
+Status: **M1 implemented** (PDF slice); **M3 implemented** (TXT/Markdown, ADR-0004); **M4 implemented** (DOCX, ADR-0005). Deviations from the M0 plan are listed in `PROGRESS.md` → "Decisions made during M1". Technology choices and their evidence: `docs/TECHNOLOGY_EVALUATION.md`. Architectural decisions: `docs/adr/`.
 
 ## 1. System overview
 
@@ -62,7 +62,7 @@ All are `typing.Protocol`s with a local implementation now and a production one 
 | `JobQueue` | procrastinate on Postgres | same, separate DB or host | `enqueue(name, payload, idempotency_key)`, `cancel(job_id, abort)`, `progress(job_id)` |
 | `AuthProvider` | `LocalSingleUserAuth` (fixed owner/workspace from config) | OIDC/JWT | `authenticate(request) -> Principal` |
 | `LLMProvider` | `GeminiProvider`, `FakeProvider` for tests/offline | same | `generate`, `stream`, `generate_structured`, `embed`, `count_tokens` |
-| `FormatHandler` | one per format (PDF, TXT, Markdown) | — | `sniff(head)`, `extract(path, limits) -> ExtractResult`, `extent(...)`; plus `name`, `label`, `extensions`, `media_type`. Each location kind also registers a locator (quote span → location) and a label (`"lines 12–14"`) |
+| `FormatHandler` | one per format (PDF, TXT, Markdown, DOCX) | — | `sniff(head)`, `extract(path, limits) -> ExtractResult`, `extent(...)`; plus `name`, `label`, `extensions`, `media_type`. Each location kind also registers a locator (quote span → location) and a label (`"lines 12–14"`) |
 | `Tracer` | LangSmith wrapper, no-op fallback | + OpenTelemetry | `@traced(name, kind)`, `trace_metadata(**kv)` |
 | `Embedder` | `SentenceTransformerEmbedder` (harrier-oss-v1-270m, MPS/CPU) | same, or `GeminiEmbedder` | `embed_documents`, `embed_query`, `dim`, `model_id` |
 
@@ -114,7 +114,8 @@ class Block(BaseModel):
 
 - `PdfLocation{kind:"pdf", regions:[{page, rects:[[x0,y0,x1,y1]...]}], char_start, char_end}`
 - `TextLocation{kind:"text", regions:[{char_start, char_end, line_start, line_end}]}` — code-point offsets into the decoded, newline-normalised text; shared by TXT and Markdown (ADR-0004)
-- later: `DocxLocation`, `SheetLocation{sheet, range}`, `CsvLocation{rows, cols}`, `JsonLocation{pointer/jsonpath}`, `XmlLocation{xpath}`, `SlideLocation{slide, element, rects}`, `ImageLocation{rects_normalised}`, `MediaLocation{start_ms, end_ms, word_ids}`.
+- `DocxLocation{kind:"docx", regions:[{para, char_start, char_end}], paragraph_start/end | table, row_start/end}` — `para` is the paragraph's index in the order the viewer (docx-preview) renders them; offsets are code points into its text (ADR-0005)
+- later: `SheetLocation{sheet, range}`, `CsvLocation{rows, cols}`, `JsonLocation{pointer/jsonpath}`, `XmlLocation{xpath}`, `SlideLocation{slide, element, rects}`, `ImageLocation{rects_normalised}`, `MediaLocation{start_ms, end_ms, word_ids}`.
 
 **PDF coordinate convention (tested in M1):** raw **PDF user space** (points, origin bottom-left, y up, unrotated), exactly as PDFium reports char boxes. The viewer converts both corners with pdf.js `viewport.convertToViewportPoint`, which applies CropBox offset, rotation and scale. Tests cover rotations 0/90/180/270 × with/without CropBox offset.
 

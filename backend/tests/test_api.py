@@ -123,7 +123,7 @@ async def test_malformed_pdf_fails_gracefully(client: Any) -> None:
     ("name", "data", "code"),
     [
         ("x.pdf", b"PK\x03\x04notpdf", "type_mismatch"),
-        ("x.docx", b"%PDF-", "unsupported_format"),
+        ("x.exe", b"MZ\x90\x00", "unsupported_format"),
         ("x.txt", b"", "empty_file"),
         ("x.pdf", b"", "empty_file"),
     ],
@@ -468,7 +468,50 @@ async def test_formats_endpoint(client: Any) -> None:
         ("pdf", [".pdf"]),
         ("text", [".txt"]),
         ("markdown", [".md", ".markdown"]),
+        ("docx", [".docx"]),
     ]
+
+
+async def test_docx_upload_ingest_ask_cite(client: Any) -> None:
+    from backend.tests.docxgen import _paragraph_texts, sample_agreement
+
+    data = sample_agreement()
+    doc = await _upload(client, data, "msa.docx")
+    assert doc["format"] == "docx"
+    await ingest(uuid.UUID(client.enqueued[-1]))
+    doc = (await client.get(f"/api/documents/{doc['id']}")).json()
+    assert doc["status"] == "ready", doc
+    assert doc["page_count"] is None and doc["extent"].endswith(" words")
+
+    r = await client.get(doc["file_url"])
+    assert r.headers["content-type"].startswith("application/vnd.openxmlformats") and r.content == data
+
+    items = (await client.get(f"/api/documents/{doc['id']}/outline")).json()
+    assert ("1. Scope", "paragraph 3") in [(i["text"], i["ref"]) for i in items]
+
+    sid = await _session(client, doc["id"])
+    r = await client.post(f"/api/sessions/{sid}/messages", json={"question": "What is the monthly fee?"})
+    events = _sse(r.text)
+    cite = next(d["citation"] for k, d in events if k == "citation")
+    assert cite["block_id"].startswith("docx:") and cite["location"]["kind"] == "docx" and cite["page"] is None
+    assert cite["ref"].startswith(("paragraph", "table"))
+    paras = _paragraph_texts(data)
+    got = " ".join(paras[g["para"]][g["char_start"] : g["char_end"]] for g in cite["location"]["regions"])
+    assert got and got in cite["quote"].replace(" | ", " ").replace("\n", " ") or cite["quote"].startswith(got)
+    assert events[-1][1]["status"] == "answered"
+
+
+async def test_renamed_zip_as_docx_fails_gracefully(client: Any) -> None:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("notes.txt", "not a word file")
+    doc = await _upload(client, buf.getvalue(), "notes.docx")
+    await ingest(uuid.UUID(client.enqueued[-1]))
+    doc = (await client.get(f"/api/documents/{doc['id']}")).json()
+    assert doc["status"] == "failed" and doc["error"]["code"] == "type_mismatch"
 
 
 async def test_stopped_answer_is_recorded_without_unverified_text(client: Any) -> None:

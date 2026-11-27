@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from backend.core.errors import InvalidFile
 from backend.document_ir.models import ExtractLimits, ExtractResult
+from backend.extraction.formats.docx.handler import DocxHandler
+from backend.extraction.formats.docx.locate import label_docx, locate_docx
 from backend.extraction.formats.pdf.handler import PdfHandler
 from backend.extraction.formats.pdf.locate import label_pdf, locate_pdf
 from backend.extraction.formats.text.handler import MARKDOWN, TXT
@@ -33,7 +35,7 @@ class FormatHandler(Protocol):
         ...
 
 
-HANDLERS: tuple[FormatHandler, ...] = (PdfHandler(), TXT, MARKDOWN)
+HANDLERS: tuple[FormatHandler, ...] = (PdfHandler(), TXT, MARKDOWN, DocxHandler())
 
 
 def supported() -> str:
@@ -57,8 +59,12 @@ def handler_for(name: str) -> FormatHandler:
 
 # Keyed by SourceLocation.kind (several formats may share one kind, as TXT and Markdown do).
 Locator = Callable[[str, int | None, dict[str, Any], int, int], BaseModel]
-_LOCATORS: dict[str, Locator] = {"pdf": locate_pdf, "text": locate_text}
-_LABELS: dict[str, Callable[[dict[str, Any]], str]] = {"pdf": label_pdf, "text": label_text}
+_LOCATORS: dict[str, Locator] = {"pdf": locate_pdf, "text": locate_text, "docx": locate_docx}
+_LABELS: dict[str, Callable[[dict[str, Any]], str]] = {
+    "pdf": label_pdf,
+    "text": label_text,
+    "docx": label_docx,
+}
 
 
 def locate(

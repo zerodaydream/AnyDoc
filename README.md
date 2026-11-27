@@ -2,7 +2,7 @@
 
 Open a document, ask it questions, and click any answer to see the exact evidence highlighted in the original file.
 
-**Status:** M1 (PDF) and M3 (TXT, Markdown) built and tested; M2 waits for evaluation documents. Formats: PDF, `.txt`, `.md`. See `PROGRESS.md`.
+**Status:** M1 (PDF), M3 (TXT, Markdown) and M4 (DOCX) built and tested; M2 waits for evaluation documents. Formats: PDF, `.txt`, `.md`, `.docx`. See `PROGRESS.md`.
 
 ## Run locally (default: Postgres in Docker, API + worker native)
 

@@ -1,0 +1,15 @@
+{"id": "msa-01", "question": "How many shipments a day does the parcel tracking support?", "answerable": true, "gold_paras": [[6, 6]], "must_contain": [["40000", "40,000"]]}
+{"id": "msa-02", "question": "When are the monthly capacity reports delivered?", "answerable": true, "gold_paras": [[7, 7]], "must_contain": [["fifth business day"]]}
+{"id": "msa-03", "question": "What availability must the platform meet each month?", "answerable": true, "gold_paras": [[11, 11]], "must_contain": [["99.9"]]}
+{"id": "msa-04", "question": "When are planned maintenance windows, and how far ahead are they announced?", "answerable": true, "gold_paras": [[12, 12]], "must_contain": [["Sunday"], ["7 days", "seven days"]]}
+{"id": "msa-05", "question": "What is the first response time for a critical issue?", "answerable": true, "gold_paras": [[14, 19]], "must_contain": [["15 minutes"]]}
+{"id": "msa-06", "question": "How are low severity issues first responded to?", "answerable": true, "gold_paras": [[14, 16], [23, 26]], "must_contain": [["email"]]}
+{"id": "msa-07", "question": "What is the fixed monthly fee?", "answerable": true, "gold_paras": [[28, 28]], "must_contain": [["18500", "18,500"]]}
+{"id": "msa-08", "question": "What is the maximum service credit in a month?", "answerable": true, "gold_paras": [[29, 30]], "must_contain": [["25%"]]}
+{"id": "msa-09", "question": "What is the weekend day rate for a platform engineer?", "answerable": true, "gold_paras": [[32, 37]], "must_contain": [["1150", "1,150"]]}
+{"id": "msa-10", "question": "How long is the initial term of the agreement?", "answerable": true, "gold_paras": [[42, 42]], "must_contain": [["36 months"]]}
+{"id": "msa-11", "question": "How much notice is needed to end the agreement?", "answerable": true, "gold_paras": [[43, 43]], "must_contain": [["90 days"]]}
+{"id": "msa-12", "question": "Where is shipment data stored?", "answerable": true, "gold_paras": [[46, 46]], "must_contain": [["Frankfurt"]]}
+{"id": "msa-13", "question": "Who signed for Harbor Lane Logistics?", "answerable": true, "gold_paras": [[47, 47]], "must_contain": [["Mara Ellison"]]}
+{"id": "msa-14", "question": "What is the penalty if Harbor Lane pays an invoice late?", "answerable": false}
+{"id": "msa-15", "question": "Which cloud provider hosts the platform?", "answerable": false}

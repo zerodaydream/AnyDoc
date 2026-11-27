@@ -6,6 +6,7 @@ Writes eval/results/<dataset>-<UTC time>.json and prints a summary.
 
 import argparse
 import hashlib
+import importlib
 import json
 import statistics
 import time
@@ -20,10 +21,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def fetch_document(meta: dict[str, Any]) -> Path:
-    path = ROOT / "data" / "public" / meta["filename"]
+    path: Path = ROOT / "data" / "public" / str(meta["filename"])
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(meta["url"], path)  # noqa: S310 - fixed https URL from dataset meta
+        if "generator" in meta:  # a deterministic synthetic document, e.g. "backend.tests.docxgen:sample_agreement"
+            module, fn = meta["generator"].split(":")
+            path.write_bytes(getattr(importlib.import_module(module), fn)())
+        else:
+            urllib.request.urlretrieve(meta["url"], path)  # noqa: S310 - fixed https URL from dataset meta
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if digest != meta["sha256"]:
         raise SystemExit(f"{path} sha256 mismatch: got {digest}")
@@ -78,7 +83,10 @@ def norm(s: str) -> str:
 
 
 def at_gold(case: dict[str, Any], location: dict[str, Any]) -> bool:
-    """A citation is in the right place if it lands on a gold page (PDF) or overlaps a gold line range (text)."""
+    """A citation is in the right place if it lands on a gold page (PDF), overlaps a gold line range (text) or sits
+    in a gold paragraph range (DOCX, by rendered paragraph index)."""
+    if "gold_paras" in case:
+        return all(any(a <= r["para"] <= b for a, b in case["gold_paras"]) for r in location["regions"])
     if "gold_pages" in case:
         return all(r["page"] in case["gold_pages"] for r in location["regions"])
     return all(
