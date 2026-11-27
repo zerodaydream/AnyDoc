@@ -5,6 +5,7 @@ import type { AnswerStatus, Citation, Closest, Segment, WebResult } from '../../
 import { CitationMark, SourceQuote } from '../citations/Citations'
 import { numbered, type LiveAnswer } from './answerReducer'
 import { ThinkingBlock } from './ThinkingBlock'
+import { WaitingLine } from './WaitingLine'
 import { WebAnswer } from './WebAnswer'
 
 type Props = {
@@ -35,7 +36,7 @@ function abstainText(webSearching: string | null | undefined, web: WebResult | n
 }
 const SHOWN = 3
 
-export function AssistantMessage({ id, segments, status, closest = [], error, route, blocks = 0, reasoning, suggestion, web, webSearching, thinkingStartedAt, thinkingMs, live = false }: Props) {
+export function AssistantMessage({ id, segments, status, closest = [], error, reasoning, suggestion, web, webSearching, thinkingStartedAt, thinkingMs, live = false }: Props) {
   const [expanded, setExpanded] = useState(false)
   const streaming = status === 'streaming'
   const segs = numbered(segments)
@@ -55,17 +56,7 @@ export function AssistantMessage({ id, segments, status, closest = [], error, ro
       <LogoMark size={32} state={mark} enter={live} className="-mt-0.5" />
       <article className="min-w-0 flex-1 font-serif text-[17px] leading-[29px] text-fg" aria-busy={streaming}>
         {reasoning && <ThinkingBlock text={reasoning} live={thinkingLive} startedAt={thinkingStartedAt} ms={thinkingMs} />}
-        {waiting && !reasoning && (
-          <p className="font-sans text-[14px] text-muted" aria-live="polite">
-            <span className="ad-shimmer">
-              {route === 'hybrid'
-                ? `Searching the document for the most relevant passages (${blocks} selected)…`
-                : route === 'full_context'
-                  ? `Reading the whole document (${blocks} passages)…`
-                  : 'Opening the document…'}
-            </span>
-          </p>
-        )}
+        {waiting && !reasoning && <WaitingLine />}
 
         {abstained && !hasText ? (
           <p>{abstainText(webSearching, web)}</p>

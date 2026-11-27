@@ -29,6 +29,9 @@ every row, and a model doing arithmetic over retrieved rows is neither complete 
    out (e.g. version ranges "3.9-3.93"), so the answer can say so. The schema shows the planner that count.
 7. **No web fallback for table questions**: when the planner returned queries, the question is about the file's own
    rows, so an empty or failed computation abstains instead of searching the web.
+8. **Title lines are named, never counted**: when title lines hold text in a column a query read, the evidence adds
+   `Above the table (title lines, not data rows): rows 1–2 have text in "Column A"`, cited to those cells, so a
+   "0 rows" result can be explained instead of looking wrong.
 5. **Generic hook, one time**: `registry.QueryTool` (plan schema, plan prompt, `run`) and
    `answering/computed.py`. The engine only prepends computed blocks; validation, locations and the UI are unchanged.
    One prompt rule was added: never do arithmetic; cite computed blocks for totals/counts.

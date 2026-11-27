@@ -327,6 +327,27 @@ def test_sum_uses_the_numbers_and_names_the_cells_left_out(tmp_path: Path) -> No
     assert v.ok, v.reason
 
 
+def test_queries_mention_title_lines_in_the_columns_they_read(tmp_path: Path) -> None:
+    path = _write(tmp_path, VERSIONS)
+    plan = {"queries": [{"compute": "count", "where": [{"column": "Column A", "op": "not_empty"}]}]}
+    (block,) = run_plan(path, plan, LIMITS)
+    lines = block.content.split("\n")
+    assert lines[1].startswith("Rows matched: 0 of 6 data rows")
+    note = 'Above the table (title lines, not data rows): rows 1–2 have text in "Column A"'
+    assert lines[-1] == note
+    i = block.content.index(note)
+    loc = locate("csv", block.content, None, block.format_metadata, i, i + len(note))
+    assert loc["regions"] == [{"row_start": 1, "row_end": 2, "col_start": 0, "col_end": 0}]  # the title cells
+    assert describe(loc) == "rows 1–2, Column A"
+    ev = {block.block_id: EvidenceBlock(block.block_id, "csv", block.content, None, block.format_metadata, None)}
+    answer = "No data rows have text in Column A; only the title lines in rows 1 and 2 above the table do."
+    v = validate_segment(answer, [{"block_id": block.block_id, "quote": note}], ev, 0.9)
+    assert v.ok, v.reason
+    # A column the title lines leave empty gets no note.
+    (block,) = run_plan(path, {"queries": [{"compute": "sum", "column": "Version Number"}]}, LIMITS)
+    assert "Above the table" not in block.content
+
+
 def test_mostly_text_columns_still_refuse_sums(tmp_path: Path) -> None:
     path = _write(tmp_path, "Name,Code\na,x1\nb,x2\nc,3\n")
     assert run_plan(path, {"queries": [{"compute": "sum", "column": "Code"}]}, LIMITS) == []

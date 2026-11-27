@@ -78,7 +78,7 @@ export function Home() {
 
         {recent.length > 0 && (
           <section className="mt-12 flex min-h-0 flex-1 flex-col">
-            <h2 className="text-[13px] font-medium text-muted">Start a new conversation about</h2>
+            <h2 className="text-[13px] font-medium text-muted">Click to converse with your old document uploads</h2>
             <ul
               aria-label="Your documents"
               className="mt-2 min-h-0 divide-y divide-line overflow-y-auto overscroll-contain border-y border-line [scrollbar-gutter:stable] [scrollbar-width:thin]"

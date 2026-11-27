@@ -70,10 +70,12 @@ All text/background pairs are checked to WCAG AA in M1 with an automated contras
   Previous 30 days / Older; each row = title (first question) + document name. Rename (double-click or pencil),
   delete (two-step confirm). Collapses to zero width (Ctrl/Cmd+B); a drawer on narrow screens. A conversation
   appears in the list once it has a first question.
-- **Home** (no conversation open): serif headline, drop zone, and "Start a new conversation about" recent documents.
+- **Home** (no conversation open): serif headline, drop zone, and "Click to converse with your old document uploads" recent documents.
 - **Conversation**: header with the conversation title; user turns are right-aligned bubbles; answers are serif
   prose with numbered clay pills; sources below as quote blocks (clay rule, italic serif quote, page). Before the
-  first word: a status line saying what is being read ("Reading the whole document (461 passages)…").
+  first word (and while no thoughts arrive): plain status lines that step through every answer's stages every
+  2.4 s and rest on the last ("Reading through your document…" … "Putting the answer together…"). No counts or
+  internals (`features/chat/waitLines.ts`).
 - **Empty conversation**: document chip, "What would you like to know?", and "Or start with a section" — the
   document's real headings with page numbers (from `/outline`), so starters are grounded, never invented.
 - **Viewer**: Sections menu, typed page jump, evidence-location stepper (multi-region), find, zoom.

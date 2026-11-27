@@ -180,6 +180,23 @@ body {
   }
 }
 
+/* Waiting lines: each new line rises in softly. */
+.ad-wait-line {
+  display: inline-block;
+  animation: ad-wait-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ad-wait-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ad-wait-line {
+    animation: none;
+  }
+}
+
 /* Tooltip: a short fade + slide from the anchor side; answers the pointer, so motion is earned. */
 .ad-tip {
   animation: ad-tip-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1);

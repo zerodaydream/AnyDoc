@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Citation } from '../../lib/api'
 import { useUi } from '../../stores/ui'
 import { AssistantMessage } from './AssistantMessage'
+import { WAIT_LINES } from './waitLines'
 
 const cite: Citation = {
   block_id: 'pdf:4:2:ab',
@@ -133,7 +134,29 @@ describe('stopped answers', () => {
   it('shows a plain note when stopped before any answer', () => {
     render(<AssistantMessage id="m8" segments={[]} status="stopped" />)
     expect(screen.getByText('Response stopped.')).toBeInTheDocument()
-    expect(screen.queryByText(/Reading the whole document/)).toBeNull()
+    expect(screen.queryByText(/Reading through your document/)).toBeNull()
+  })
+})
+
+describe('waiting for the answer', () => {
+  it('walks through plain status lines, without counts, and rests on the last one', async () => {
+    vi.useFakeTimers()
+    try {
+      render(<AssistantMessage id="w9" segments={[]} status="streaming" />)
+      expect(screen.getByText(WAIT_LINES[0])).toBeInTheDocument()
+      act(() => vi.advanceTimersByTime(2400))
+      expect(screen.getByText(WAIT_LINES[1])).toBeInTheDocument()
+      for (let k = 0; k < 10; k++) act(() => vi.advanceTimersByTime(2400)) // each line schedules the next
+      expect(screen.getByText(WAIT_LINES.at(-1)!)).toBeInTheDocument()
+      expect(screen.getByRole('article')).not.toHaveTextContent(/\d/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives way to the model’s thoughts as soon as they arrive', () => {
+    render(<AssistantMessage id="w10" segments={[]} status="streaming" reasoning="Looking at the table." />)
+    expect(screen.queryByText(WAIT_LINES[0])).toBeNull()
   })
 })
 

@@ -74,7 +74,7 @@ describe('stopping an answer', () => {
     await screen.findByText('Response stopped.')
     await waitFor(() => expect(screen.getAllByText('What is the grid?')).toHaveLength(1))
     expect(screen.getByRole('article')).not.toHaveTextContent('Unverified half')
-    expect(screen.queryByText(/Reading the whole document/)).toBeNull()
+    expect(screen.queryByText(/Reading through your document/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument()
     expect(box).toHaveValue('')
   })

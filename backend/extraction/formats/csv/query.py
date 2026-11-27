@@ -366,6 +366,7 @@ class _Run:
                 g = self.group(behind, read) if compute in ("min", "max") else g_all
                 self.line(f"Result: {result}" if compute == "count" else f"Result: {what} = {result}", g)
 
+        self.above_table(read)
         fm: dict[str, Any] = {"segments": self.segments, "groups": self.groups, "columns": self.table.columns}
         digest = hashlib.sha1(self.content.encode(), usedforsecurity=False).hexdigest()[:8]
         return IRBlock(
@@ -377,6 +378,22 @@ class _Run:
             source_location=locate_csv(self.content, None, fm, 0, len(self.content)),
             format_metadata=fm,
             section_path=[COMPUTED_SECTION],
+        )
+
+    def above_table(self, cols: list[int]) -> None:
+        """Title lines above the header aren't data rows, so no query counts them. When they hold text in a column
+        this query read, say so (and cite those cells): otherwise "0 rows filled in Column A" reads as wrong to
+        someone looking at a title in A1."""
+        hits = [(n, k) for n, r in self.table.preamble_rows() for k in sorted(set(cols)) if _cell(r, k)]
+        if not hits:
+            return
+        rows = sorted({n for n, _ in hits})
+        where = ", ".join(f"{a}–{b}" if b > a else str(a) for a, b in _runs(rows))
+        names = " and ".join(self.q(k) for k in sorted({k for _, k in hits}))
+        self.line(
+            f"Above the table (title lines, not data rows): row{'s' if len(rows) > 1 else ''} {where} "
+            f"{'have' if len(rows) > 1 else 'has'} text in {names}",
+            self.group(rows, sorted({k for _, k in hits})),
         )
 
     def matched_line(self, n: int, total: int, skipped: list[str], k: int | None, shown: int | None = None) -> str:
