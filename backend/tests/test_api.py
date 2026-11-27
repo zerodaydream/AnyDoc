@@ -22,10 +22,11 @@ async def _upload(client: Any, data: bytes, name: str = "report.pdf") -> dict[st
 
 async def _ready_doc(client: Any) -> dict[str, Any]:
     doc = await _upload(client, sample_report())
-    assert doc["status"] == "queued"
+    assert doc["status"] == "queued" and doc["ingested_at"] is None
     await ingest(uuid.UUID(client.enqueued[-1]))
     doc = (await client.get(f"/api/documents/{doc['id']}")).json()
     assert doc["status"] == "ready", doc
+    assert doc["ingested_at"] is not None and doc["ingested_at"] >= doc["created_at"]
     return {**doc, "sid": await _session(client, doc["id"])}
 
 

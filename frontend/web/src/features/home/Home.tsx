@@ -1,22 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, Upload } from 'lucide-react'
-import { useRef, useState } from 'react'
-import { api } from '../../lib/api'
+import { CircleAlert, FileText, Upload } from 'lucide-react'
+import { useRef } from 'react'
+import { api, type DocumentOut } from '../../lib/api'
+import { ago, stamp } from '../../lib/time'
 import { useUi } from '../../stores/ui'
+import { MAX_MB, useUpload } from './upload'
 
-const MAX_MB = 100
+const when = (d: DocumentOut) => `Added ${stamp(d.created_at)}` + (d.ingested_at ? ` · Ready ${stamp(d.ingested_at)}` : '')
 
 export function Home() {
   const qc = useQueryClient()
   const openSession = useUi((s) => s.openSession)
   const docs = useQuery({ queryKey: ['documents'], queryFn: api.listDocuments })
-  const formats = useQuery({ queryKey: ['formats'], queryFn: api.formats, staleTime: Infinity })
-  const extensions = formats.data?.flatMap((f) => f.extensions) ?? []
-  const labels = formats.data?.map((f) => f.label) ?? ['PDF']
-  const kinds = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} or ${labels.at(-1)}` : labels[0]
+  const { take, busy: uploading, error: uploadError, extensions, kinds } = useUpload()
   const picker = useRef<HTMLInputElement>(null)
-  const [over, setOver] = useState(false)
-  const [localError, setLocalError] = useState<string | null>(null)
 
   const start = useMutation({
     mutationFn: api.createSession,
@@ -25,30 +22,15 @@ export function Home() {
       openSession(s.id)
     },
   })
-  const upload = useMutation({
-    mutationFn: api.upload,
-    onSuccess: async (doc) => {
-      void qc.invalidateQueries({ queryKey: ['documents'] })
-      start.mutate(doc.id)
-    },
-  })
-
-  const take = (file?: File) => {
-    setLocalError(null)
-    if (!file) return
-    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-    // Before the list loads, let the server decide: it validates every upload anyway.
-    if (formats.data && (!file.name.includes('.') || !extensions.includes(ext))) return setLocalError(`${file.name} isn’t a file AnyDoc reads yet. Upload ${kinds}.`)
-    if (file.size > MAX_MB * 2 ** 20) return setLocalError(`${file.name} is larger than ${MAX_MB} MB.`)
-    upload.mutate(file)
-  }
-  const error = localError ?? upload.error?.message ?? start.error?.message
-  const busy = upload.isPending || start.isPending
-  const recent = (docs.data ?? []).filter((d) => d.status === 'ready').slice(0, 6)
+  const error = uploadError ?? start.error?.message
+  const busy = uploading || start.isPending
+  const recent = (docs.data ?? []).filter((d) => d.status === 'ready').slice(0, 50)
 
   return (
+    // The page itself stays put; only the document list scrolls. On a very short window (below min-h) the page
+    // scrolls instead, so nothing is ever cut off.
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-[640px] flex-col px-6 pb-16 pt-[14vh]">
+      <div className="mx-auto flex h-full min-h-[520px] max-w-[640px] flex-col px-6 pb-8 pt-[14vh]">
         <h1 className="font-serif text-[34px] leading-[42px] tracking-[-0.015em] text-fg">
           Ask your document. See where every answer comes from.
         </h1>
@@ -57,26 +39,13 @@ export function Home() {
           AnyDoc tells you.
         </p>
 
-        <div
-          onDragOver={(e) => {
-            e.preventDefault()
-            setOver(true)
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setOver(false)
-            take(e.dataTransfer.files[0])
-          }}
-          className={`mt-9 flex items-center gap-4 rounded-2xl border border-dashed px-5 py-5 transition-colors ${
-            over ? 'border-accent bg-accent/8' : 'border-line bg-bg'
-          }`}
-        >
+        {/* Drops are handled app-wide by <FileDrop>: anywhere on screen works, not only this box. */}
+        <div className="mt-9 flex items-center gap-4 rounded-2xl border border-dashed border-line bg-bg px-5 py-5">
           <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-surface text-accent">
             <Upload size={19} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-fg">{busy ? 'Uploading…' : 'Drop a file here'}</p>
+            <p className="text-fg">{uploading ? 'Uploading…' : 'Drop a file anywhere'}</p>
             <p className="text-[13px] text-muted">
               {kinds}, up to {MAX_MB} MB
             </p>
@@ -89,28 +58,48 @@ export function Home() {
           >
             Choose file
           </button>
-          <input ref={picker} type="file" accept={extensions.join(',')} hidden onChange={(e) => take(e.target.files?.[0])} />
+          <input
+            ref={picker}
+            type="file"
+            accept={extensions.join(',')}
+            hidden
+            onChange={(e) => {
+              take(e.target.files)
+              e.target.value = '' // picking the same file again still uploads
+            }}
+          />
         </div>
         {error && (
-          <p role="alert" className="mt-3 text-danger">
-            {error}
+          <p role="alert" className="mt-3 flex gap-2.5 rounded-xl border border-danger/30 bg-danger/8 px-4 py-3 text-[14px] leading-[22px] text-fg">
+            <CircleAlert size={16} className="mt-[3px] shrink-0 text-danger" aria-hidden />
+            <span>{error}</span>
           </p>
         )}
 
         {recent.length > 0 && (
-          <section className="mt-12">
+          <section className="mt-12 flex min-h-0 flex-1 flex-col">
             <h2 className="text-[13px] font-medium text-muted">Start a new conversation about</h2>
-            <ul className="mt-2 divide-y divide-line border-y border-line">
+            <ul
+              aria-label="Your documents"
+              className="mt-2 min-h-0 divide-y divide-line overflow-y-auto overscroll-contain border-y border-line [scrollbar-gutter:stable] [scrollbar-width:thin]"
+            >
               {recent.map((d) => (
                 <li key={d.id}>
                   <button
                     onClick={() => start.mutate(d.id)}
                     disabled={busy}
+                    title={when(d)}
                     className="group flex w-full items-center gap-3 px-1 py-3 text-left hover:bg-surface/50"
                   >
                     <FileText size={17} className="shrink-0 text-muted group-hover:text-accent" />
                     <span className="min-w-0 flex-1 truncate text-fg">{d.title}</span>
-                    <span className="shrink-0 text-[13px] tabular-nums text-muted">{d.extent}</span>
+                    <span className="shrink-0 text-[13px] tabular-nums text-muted">
+                      {d.extent}
+                      <span aria-hidden> · </span>
+                      <time dateTime={d.created_at} aria-label={when(d)}>
+                        {ago(d.created_at)}
+                      </time>
+                    </span>
                   </button>
                 </li>
               ))}

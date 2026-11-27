@@ -37,6 +37,9 @@ Read this first every session. Update it last.
   `DELETE /api/admin/documents/{id}` (header `X-Admin-Token` = `ADMIN_TOKEN`; unset = 404): DB cascade removes
   versions, blocks, chunks/embeddings, sessions, messages; stored original removed once no version uses it
   (content-addressed, shared by identical uploads); 409 while ingesting; audit `document.delete`. No UI yet.
+- Home: each recent document shows when it was added ("3 min ago"; hover = added + ready times, new
+  `DocumentOut.ingested_at`). Files can be dropped anywhere in the app (`FileDrop`, full-window "+" target): the drop
+  opens Home and starts a new conversation. Upload flow shared via `features/home/upload.ts`.
 
 ## M5 — CSV (2026-11-28, ADR-0006, evidence D12)
 - Format module `backend/extraction/formats/csv/`: own RFC 4180 tokeniser (Python csv semantics, but an unclosed

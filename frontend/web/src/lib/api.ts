@@ -67,7 +67,8 @@ export type DocumentOut = {
   stage_detail: string | null
   error: { code: string; message: string } | null
   file_url: string
-  created_at: string
+  created_at: string // when it was added
+  ingested_at: string | null // when it became ready to ask
 }
 
 export type Segment = { text: string; citations: Citation[]; retracted?: string }

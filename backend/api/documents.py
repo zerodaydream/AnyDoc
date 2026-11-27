@@ -37,7 +37,8 @@ class DocumentOut(BaseModel):
     stage_detail: str | None
     error: dict[str, str] | None
     file_url: str
-    created_at: datetime
+    created_at: datetime  # when it was added (uploaded)
+    ingested_at: datetime | None  # when it became ready to ask; None until then
 
 
 def _out(d: Document, v: DocumentVersion) -> DocumentOut:
@@ -57,6 +58,7 @@ def _out(d: Document, v: DocumentVersion) -> DocumentOut:
         error={"code": v.error_code, "message": v.error_detail or ""} if v.error_code else None,
         file_url=f"/api/documents/{d.id}/file",
         created_at=d.created_at,
+        ingested_at=v.updated_at if v.status == "ready" else None,  # "ready" is final: its last update
     )
 
 
