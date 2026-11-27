@@ -83,8 +83,14 @@ def norm(s: str) -> str:
 
 
 def at_gold(case: dict[str, Any], location: dict[str, Any]) -> bool:
-    """A citation is in the right place if it lands on a gold page (PDF), overlaps a gold line range (text) or sits
-    in a gold paragraph range (DOCX, by rendered paragraph index)."""
+    """A citation is in the right place if it lands on a gold page (PDF), overlaps a gold line range (text), sits
+    in a gold paragraph range (DOCX, by rendered paragraph index) or overlaps gold rows (CSV; the header row counts,
+    since a quote of a listed row may include the column names)."""
+    if "gold_rows" in case:
+        return all(
+            r["row_start"] == 1 or any(r["row_start"] <= b and r["row_end"] >= a for a, b in case["gold_rows"])
+            for r in location["regions"]
+        )
     if "gold_paras" in case:
         return all(any(a <= r["para"] <= b for a, b in case["gold_paras"]) for r in location["regions"])
     if "gold_pages" in case:

@@ -21,7 +21,16 @@ export type DocxLocation = {
   row_start?: number | null
   row_end?: number | null
 }
-export type SourceLocation = PdfLocation | TextLocation | DocxLocation
+/** A rectangle of cells: rows are file records from 1 (header = row 1, blank lines count), columns from 0. */
+export type CsvRegion = { row_start: number; row_end: number; col_start: number; col_end: number }
+export type CsvLocation = {
+  kind: 'csv'
+  regions: CsvRegion[]
+  rows: number // distinct rows covered
+  columns?: string[] // names of the columns covered; empty = whole rows
+  truncated?: boolean
+}
+export type SourceLocation = PdfLocation | TextLocation | DocxLocation | CsvLocation
 
 /** Where a citation is, in words: the backend's `ref` ("lines 12–14"); older messages only have a page. */
 export function whereLabel(c: { ref?: string | null; page?: number | null }, capital = false): string {

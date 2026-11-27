@@ -1,4 +1,8 @@
-"""Format registry. Adding a format = one new handler module + one entry in HANDLERS (and its kind below)."""
+"""Format registry. Adding a format = one new handler module + one entry in HANDLERS (and its kind below).
+
+Tabular formats may also register a QueryTool: the answer engine then lets the model plan exact computations over
+the whole file before answering (ADR-0006). The engine knows only this protocol, never the format.
+"""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -7,7 +11,10 @@ from typing import Any, Protocol
 from pydantic import BaseModel
 
 from backend.core.errors import InvalidFile
-from backend.document_ir.models import ExtractLimits, ExtractResult
+from backend.document_ir.models import ExtractLimits, ExtractResult, IRBlock
+from backend.extraction.formats.csv.handler import CsvHandler
+from backend.extraction.formats.csv.locate import label_csv, locate_csv
+from backend.extraction.formats.csv.query import CSV_QUERIES
 from backend.extraction.formats.docx.handler import DocxHandler
 from backend.extraction.formats.docx.locate import label_docx, locate_docx
 from backend.extraction.formats.pdf.handler import PdfHandler
@@ -35,7 +42,24 @@ class FormatHandler(Protocol):
         ...
 
 
-HANDLERS: tuple[FormatHandler, ...] = (PdfHandler(), TXT, MARKDOWN, DocxHandler())
+class QueryTool(Protocol):
+    """Exact computations over a structured file (brief §6.7). The model fills `plan_schema`; `run` executes it in
+    the sandbox and returns evidence blocks whose locations are the cells it read."""
+
+    plan_schema: type[BaseModel]
+    plan_system: str
+
+    def plan_prompt(self, meta: dict[str, Any], question: str, history: list[tuple[str, str]]) -> str:
+        """Schema of the document (from extraction metadata, no file read) + the question, for the planning call."""
+        ...
+
+    def run(self, path: Path, plan: dict[str, Any], limits: ExtractLimits) -> list[IRBlock]:
+        """Execute a validated plan over the original file. Runs inside the sandbox; picklable in and out."""
+        ...
+
+
+HANDLERS: tuple[FormatHandler, ...] = (PdfHandler(), TXT, MARKDOWN, DocxHandler(), CsvHandler())
+_QUERY_TOOLS: dict[str, QueryTool] = {"csv": CSV_QUERIES}
 
 
 def supported() -> str:
@@ -57,13 +81,18 @@ def handler_for(name: str) -> FormatHandler:
     return next(h for h in HANDLERS if h.name == name)
 
 
+def query_tool(name: str | None) -> QueryTool | None:
+    return _QUERY_TOOLS.get(name or "")
+
+
 # Keyed by SourceLocation.kind (several formats may share one kind, as TXT and Markdown do).
 Locator = Callable[[str, int | None, dict[str, Any], int, int], BaseModel]
-_LOCATORS: dict[str, Locator] = {"pdf": locate_pdf, "text": locate_text, "docx": locate_docx}
+_LOCATORS: dict[str, Locator] = {"pdf": locate_pdf, "text": locate_text, "docx": locate_docx, "csv": locate_csv}
 _LABELS: dict[str, Callable[[dict[str, Any]], str]] = {
     "pdf": label_pdf,
     "text": label_text,
     "docx": label_docx,
+    "csv": label_csv,
 }
 
 

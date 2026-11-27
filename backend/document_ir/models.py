@@ -53,8 +53,25 @@ class DocxLocation(BaseModel):
     row_end: int | None = None
 
 
+class CsvRegion(BaseModel):
+    # A rectangle of cells. Rows are 1-based record numbers in the file (the header is row 1 when there is one;
+    # blank lines count), columns 0-based and inclusive. See formats/csv/table.py.
+    row_start: int
+    row_end: int
+    col_start: int
+    col_end: int
+
+
+class CsvLocation(BaseModel):
+    kind: Literal["csv"] = "csv"
+    regions: list[CsvRegion]
+    rows: int  # distinct rows covered (a computed result can cover rows far apart)
+    columns: list[str] = []  # names of the columns covered; empty = whole rows
+    truncated: bool = False  # more cells were read than the regions list (capped for size)
+
+
 # New formats add a variant here; consumers switch on `kind`.
-SourceLocation = Annotated[PdfLocation | TextLocation | DocxLocation, Field(discriminator="kind")]
+SourceLocation = Annotated[PdfLocation | TextLocation | DocxLocation | CsvLocation, Field(discriminator="kind")]
 
 BlockType = Literal["heading", "paragraph", "list_item", "quote", "code", "table"]
 

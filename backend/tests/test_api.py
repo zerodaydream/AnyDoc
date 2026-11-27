@@ -469,6 +469,7 @@ async def test_formats_endpoint(client: Any) -> None:
         ("text", [".txt"]),
         ("markdown", [".md", ".markdown"]),
         ("docx", [".docx"]),
+        ("csv", [".csv", ".tsv"]),
     ]
 
 
@@ -512,6 +513,89 @@ async def test_renamed_zip_as_docx_fails_gracefully(client: Any) -> None:
     await ingest(uuid.UUID(client.enqueued[-1]))
     doc = (await client.get(f"/api/documents/{doc['id']}")).json()
     assert doc["status"] == "failed" and doc["error"]["code"] == "type_mismatch"
+
+
+async def _ready_csv(client: Any, data: bytes, name: str = "orders.csv") -> dict[str, Any]:
+    doc = await _upload(client, data, name)
+    assert doc["format"] == "csv"
+    await ingest(uuid.UUID(client.enqueued[-1]))
+    doc = (await client.get(f"/api/documents/{doc['id']}")).json()
+    assert doc["status"] == "ready", doc
+    return {**doc, "sid": await _session(client, doc["id"])}
+
+
+async def test_csv_upload_ingest_ask_cites_computed_result(client: Any) -> None:
+    from backend.tests.csvgen import sample_orders
+
+    data = sample_orders()
+    doc = await _ready_csv(client, data)
+    assert doc["page_count"] is None and doc["extent"] == "120 rows, 11 columns"
+    r = await client.get(doc["file_url"])
+    assert r.headers["content-type"].startswith("text/csv") and r.content == data
+
+    r = await client.post(
+        f"/api/sessions/{doc['sid']}/messages", json={"question": "What is the sum of Units for West?"}
+    )
+    events = _sse(r.text)
+    cites = [d["citation"] for k, d in events if k == "citation"]
+    assert cites and all(c["location"]["kind"] == "csv" and c["page"] is None for c in cites)
+    cite = cites[0]
+    assert cite["block_id"].startswith("csvq:")  # the computed result, not a guess from rows
+    assert cite["ref"] == "47 rows, Region and Units" and cite["location"]["rows"] == 47
+    done = events[-1][1]
+    assert done["status"] == "answered" and done["usage"]["computed"]["queries"] == 1
+    assert done["usage"]["computed"]["results"] == 1
+
+    # History keeps the validated citation; the computed block itself is never stored.
+    msgs = (await client.get(f"/api/sessions/{doc['sid']}/messages")).json()
+    assert msgs[-1]["segments"][0]["citations"][0]["block_id"] == cite["block_id"]
+
+
+async def test_csv_lookup_without_computation_cites_rows(client: Any) -> None:
+    from backend.tests.csvgen import sample_orders
+
+    doc = await _ready_csv(client, sample_orders())
+    r = await client.post(
+        f"/api/sessions/{doc['sid']}/messages", json={"question": "Which order mentions warranty ticket?"}
+    )
+    events = _sse(r.text)
+    cite = next(d["citation"] for k, d in events if k == "citation")
+    assert cite["block_id"].startswith("csv:") and cite["location"]["kind"] == "csv"
+    assert events[-1][1]["usage"]["computed"]["queries"] == 0
+
+
+async def test_csv_planning_failure_still_answers(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.answering import computed
+    from backend.tests.csvgen import sample_orders
+
+    doc = await _ready_csv(client, sample_orders())
+
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("sandbox down")
+
+    monkeypatch.setattr(computed, "run_sandboxed", broken)
+    r = await client.post(
+        f"/api/sessions/{doc['sid']}/messages", json={"question": "What is the sum of Units for West?"}
+    )
+    events = _sse(r.text)
+    done = events[-1]
+    assert done[0] == "done" and done[1]["usage"]["computed"]["error"] == "RuntimeError"
+    assert all(d["citation"]["block_id"].startswith("csv:") for k, d in events if k == "citation")
+
+
+async def test_tsv_and_binary_csv(client: Any) -> None:
+    doc = await _ready_csv(client, b"id\tname\n1\talpha\n2\tbeta\n", "items.tsv")
+    assert doc["extent"] == "2 rows, 2 columns"
+    r = await client.post("/api/documents", params={"filename": "photo.csv"}, content=b"\x89PNG\r\n\x1a\n\x00\x00")
+    assert r.status_code == 422 and r.json()["error"]["code"] == "type_mismatch"
+
+
+async def test_malformed_csv_fails_gracefully(client: Any) -> None:
+    doc = await _upload(client, b'a,b\n"never closed,1\n2,3\n', "broken.csv")
+    await ingest(uuid.UUID(client.enqueued[-1]))
+    doc = (await client.get(f"/api/documents/{doc['id']}")).json()
+    assert doc["status"] == "failed" and doc["error"]["code"] == "malformed_csv"
+    assert "never closed" in doc["error"]["message"]
 
 
 async def test_stopped_answer_is_recorded_without_unverified_text(client: Any) -> None:

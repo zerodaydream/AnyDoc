@@ -2,13 +2,53 @@
 
 Read this first every session. Update it last.
 
-## Current state (2026-11-26)
+## Current state (2026-11-28)
 - M0 — done (research, plan; owner answered clarifications).
 - **M1 — Foundation + PDF vertical slice: built and tested, awaiting owner review.**
 - M2 — blocked until the owner supplies evaluation documents in `eval/data/`.
 - **M3 — TXT/Markdown: built and tested; live Gemini eval baseline still to run.** Owner chose (2026-11-26) to do
   M3 ahead of M2 because M2 is blocked.
-- **M4 — DOCX: built and tested on branch `feature/m4-docx` (uncommitted); live-model eval baseline still to run.**
+- **M4 — DOCX: built and tested, committed on `feature/m4-docx`; live-model eval baseline still to run.**
+- **M5 — CSV: built and tested on branch `feature/m5-csv` (uncommitted); live-model eval baseline still to run.**
+
+## M5 — CSV (2026-11-28, ADR-0006, evidence D12)
+- Format module `backend/extraction/formats/csv/`: own RFC 4180 tokeniser (Python csv semantics, but an unclosed
+  quote fails the file), deterministic delimiter (`,` tab `;` `|`) and header rules, decoding shared with TXT.
+  `.csv` and `.tsv`. Rows = file records from 1 (header = row 1, blank lines count). No new dependency.
+- Blocks: ≤ 40 rows / ~1,500 chars, `Columns: …` + `Row 12: a | b | c`, every cell span recorded → quotes map to exact
+  cells. `CsvLocation{regions:[{row_start,row_end,col_start,col_end}], rows, columns, truncated}`; labels
+  "row 12, Total", "rows 3–5", "47 rows, Region and Units". Extent "120 rows, 11 columns". Limit = `MAX_TEXT_CHARS`,
+  1,000 columns.
+- **Table queries**: one planning call (schema + examples + question → declarative `TablePlan`: where / group_by /
+  count|sum|average|median|min|max|count_distinct|rows, ≤ 3 queries), run over the whole original in the parsing
+  sandbox (`QUERY_TIMEOUT_S`=30). Results are evidence blocks "Computed from the whole table by AnyDoc" citing the
+  cells read. Model-written values are never echoed into evidence unless found in the column (or a number/ISO date).
+  Numbers keep the column's decimals (the numeric check compares strings). Failures degrade to row-only answers.
+- One-time generic hook: `registry.QueryTool` + `backend/answering/computed.py`; engine prepends computed blocks;
+  prompt rule "never do arithmetic, cite computed blocks". `usage.computed` = {queries, results, tokens, ms, error?}.
+- Viewer `viewers/csv/CsvViewer.tsx`: hand-written virtualised grid (rows + columns windowed), sticky header and row
+  gutter, number columns right-aligned, cell wash + gutter pin, region stepper, find, zoom/fit. Parser mirrored in
+  `csv.ts` (parity over 9 fixtures from `backend/tests/csvgen.py`). Lazy chunk 7.7 KB / 3.6 KB gzip.
+- Eval: `eval/datasets/lumen_csv_synthetic.jsonl` (12 answerable + 2 unanswerable) on a generated fictional order
+  log; gold computed with `Decimal` in the generator, independently of the engine. `check_gold.py` runs each
+  `gold_plan` through the engine (ok); runner scores `gold_rows`. **Not run against Gemini/Groq yet.**
+- Tests: backend 235 (95 new: 90 CSV unit tests + 5 API: upload→ask→computed citation, lookup cites rows, planner
+  failure degrades, TSV + binary-as-CSV, malformed). Frontend 98 (27 new: parity,
+  tokeniser, virtualisation, wash/pin/scroll, header evidence, stepper, find, zoom, error, click-through).
+  E2E `frontend/web/e2e/csv-smoke.mjs` green in Brave on an isolated stack (own DB, ports 8001/5174, fake model);
+  dark, light, zoomed, mobile screenshots reviewed.
+- Measured (M2, CPU parse): 1.66 M chars / 19,200 rows → extract 0.80 s in the sandbox (1,665 blocks); a 1-query plan
+  0.31 s, a 3-query plan 0.42 s (includes process spawn). Embedding 1,665 chunks not measured (≈3 min at the M1 rate).
+
+### M5 known limitations
+- Not tested on real exports (Excel, Google Sheets, database dumps) — all fixtures are generated. Needs owner samples.
+- Header detection is heuristic: a text-only file without a header has its first row taken as the header.
+- Decimal commas (`1.234,5`) are read as text/thousands; dates order correctly only in ISO form.
+- No joins, no arithmetic between columns, ≤ 3 queries per question, ≤ 50 rows/groups per result.
+- Cells over 1,000 chars are cut in blocks (queries still see the full cell). Inner newlines show as spaces.
+- A computed result over thousands of scattered rows cites its first 300 regions (`truncated`); the stepper walks
+  one rectangle at a time (two per row when the cells read aren't adjacent).
+- One extra LLM call per CSV question. The planning prompt carries 3 example values per column (document text).
 
 ## M4 — DOCX (2026-11-27, owner chose native HTML over LibreOffice → PDF)
 - Format module `backend/extraction/formats/docx/`: OOXML read with stdlib zipfile + ElementTree (no new backend
@@ -235,4 +275,6 @@ Read this first every session. Update it last.
 1. Run the TXT/MD baselines against Gemini:
    `uv run python -m eval.runners.run_eval eval/datasets/apache_txt_synthetic.jsonl` and `…/zustand_md_synthetic.jsonl`,
    and re-run `attention_synthetic.jsonl` for PDF regressions (prompt now says `location=` instead of `page=`).
-2. Owner review of M1 + M3 + M4. 3. M2 once evaluation documents arrive. 4. M5 CSV after that.
+2. Run the CSV baseline: `uv run python -m eval.runners.run_eval eval/datasets/lumen_csv_synthetic.jsonl`; try real
+   CSV exports. 3. Owner review of M1 + M3 + M4 + M5. 4. M2 once evaluation documents arrive. 5. M6 XLSX (reuses the
+   QueryTool hook, `csv` grid and location shape).

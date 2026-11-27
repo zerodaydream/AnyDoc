@@ -103,6 +103,15 @@ All text/background pairs are checked to WCAG AA in M1 with an automated contras
   wash (CSS Highlight API); the numbered pin sits in the page margin beside the first cited paragraph. A quote
   across table cells washes each cell's paragraph. Find paints all matches and the current one.
 
+## CSV viewer (M5)
+- The table as a sheet on the sunken canvas: hairline cells, a sticky header row on `--surface` (weight 600) and a
+  sticky row-number gutter. Interface face with tabular figures; number columns right-aligned. Files without a header
+  show muted "Column A…" names. Row numbers are the file's records, so they match citation labels ("row 12, Total").
+- Evidence: cited cells get the `--evidence` wash with a 2 px clay underline (240 ms fade, none with reduced motion);
+  the numbered pin replaces the row number of the first cited row. A computed answer washes every cell it read;
+  the toolbar stepper walks those regions. Find washes matches in warn; the current one is outlined.
+- Only rows and columns in view are in the DOM (`role=grid` with row/column indexes for screen readers).
+
 ## Brand mark (2026-11-27, owner artwork)
 - Owner-supplied artwork lives in `frontend/web/src/components/Logo.tsx`: `Wordmark` (page icon + bold Georgia
   "AnyDoc", sidebar and mobile top bar) and `LogoMark` (24×24 artwork, shown at 32 px beside answers). Favicon: `public/favicon.svg`.

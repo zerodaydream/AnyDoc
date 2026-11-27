@@ -115,7 +115,8 @@ class Block(BaseModel):
 - `PdfLocation{kind:"pdf", regions:[{page, rects:[[x0,y0,x1,y1]...]}], char_start, char_end}`
 - `TextLocation{kind:"text", regions:[{char_start, char_end, line_start, line_end}]}` — code-point offsets into the decoded, newline-normalised text; shared by TXT and Markdown (ADR-0004)
 - `DocxLocation{kind:"docx", regions:[{para, char_start, char_end}], paragraph_start/end | table, row_start/end}` — `para` is the paragraph's index in the order the viewer (docx-preview) renders them; offsets are code points into its text (ADR-0005)
-- later: `SheetLocation{sheet, range}`, `CsvLocation{rows, cols}`, `JsonLocation{pointer/jsonpath}`, `XmlLocation{xpath}`, `SlideLocation{slide, element, rects}`, `ImageLocation{rects_normalised}`, `MediaLocation{start_ms, end_ms, word_ids}`.
+- `CsvLocation{kind:"csv", regions:[{row_start, row_end, col_start, col_end}], rows, columns, truncated}` — rows are file records from 1 (header = row 1), columns from 0; a computed result covers the cells it read (ADR-0006)
+- later: `SheetLocation{sheet, range}`, `JsonLocation{pointer/jsonpath}`, `XmlLocation{xpath}`, `SlideLocation{slide, element, rects}`, `ImageLocation{rects_normalised}`, `MediaLocation{start_ms, end_ms, word_ids}`.
 
 **PDF coordinate convention (tested in M1):** raw **PDF user space** (points, origin bottom-left, y up, unrotated), exactly as PDFium reports char boxes. The viewer converts both corners with pdf.js `viewport.convertToViewportPoint`, which applies CropBox offset, rotation and scale. Tests cover rotations 0/90/180/270 × with/without CropBox offset.
 
@@ -142,7 +143,8 @@ worker: extract (FormatRegistry) → IR blocks → chunk → FTS + embeddings �
 1. **Router.** If the whole document's IR ≤ `FULL_CONTEXT_TOKEN_BUDGET` (default 120k tokens, config), send all blocks labelled by `block_id`. Otherwise retrieve.
 2. **Hybrid retrieval.** Postgres FTS (`websearch_to_tsquery`, `ts_rank_cd`) + pgvector cosine (HNSW) over local embeddings (document text is not sent anywhere for indexing; only blocks used for an answer go to Gemini) → reciprocal rank fusion (k=60) → top-k chunks → expand to their blocks + neighbours.
 3. **Exact-match boost** for numbers, dates and quoted strings in the question (FTS phrase query).
-4. Reranker, contextual enrichment, query decomposition, hierarchical summaries: **not in M1**. Each is added in M2 only if it wins on the eval set.
+4. **Table queries (CSV, ADR-0006).** Formats with a `QueryTool` get one planning call (schema + question → declarative `TablePlan`), run over the whole original file in the parsing sandbox; results become extra evidence blocks ("Computed from the whole table by AnyDoc") that cite the cells read. Failure degrades to row blocks only.
+5. Reranker, contextual enrichment, query decomposition, hierarchical summaries: **not in M1**. Each is added in M2 only if it wins on the eval set.
 
 ## 8. Citation and grounding protocol
 
@@ -182,7 +184,7 @@ Structured JSON logs with `request_id`, no document content. Metrics (counters/h
 
 ## 11. Security baseline (v1)
 
-Owner scoping everywhere · magic-byte + extension + parse-test validation · size/page limits · sandboxed parsing subprocess with limits · no HTML rendering of extracted content (text only; sanitise when HTML viewers arrive) · prompt-injection delimiting · secrets from env only · strict CORS allowlist · rate-limit hook middleware (no-op locally) · `audit_log` for upload, delete, chat, export.
+Owner scoping everywhere · magic-byte + extension + parse-test validation · size/page limits · sandboxed parsing subprocess with limits · no HTML rendering of extracted content (text only; sanitise when HTML viewers arrive) · prompt-injection delimiting · table queries are declarative plans (no code/SQL), run in the parsing sandbox, and never echo model-written values into evidence (ADR-0006) · secrets from env only · strict CORS allowlist · rate-limit hook middleware (no-op locally) · `audit_log` for upload, delete, chat, export.
 
 Deferred to M-Prod: real auth, tenant-isolation tests at scale, malware scanning, signed S3 URLs, retention, backups, edge rate limiting, secret manager.
 

@@ -22,11 +22,12 @@ from pydantic import ValidationError
 from pydantic_core import from_json
 from sqlalchemy import func, select
 
+from backend.answering.computed import computed_blocks
 from backend.core.config import get_settings
 from backend.core.db import get_sessionmaker
 from backend.core.errors import TransientError
 from backend.core.models import AuditLog, Block, ChatSession, Document, DocumentVersion, Message
-from backend.extraction.registry import describe
+from backend.extraction.registry import describe, query_tool
 from backend.grounding.validator import EvidenceBlock, validate_segment
 from backend.indexing.embeddings import get_embedder
 from backend.llm.base import AnswerOut, UnsupportedOption, WebResult, WebSearchUnavailable
@@ -264,8 +265,15 @@ async def answer_stream(
                 s.context_budget(model or llm.model_id),
                 s.retrieval_top_k,
             )
+            # Tabular formats: exact results computed over the whole file go first (ADR-0006).
+            tool = query_tool(version.detected_format)
+            computed = (
+                await computed_blocks(llm, tool, version, question, history, usage, model or llm.model_id, thinking)
+                if tool
+                else []
+            )
             # Model sees b0, b1, ...: it truncated long ids like pdf:8:7:38b2d058 in live tests.
-            aliased = [(f"b{i}", b) for i, b in enumerate(got.blocks)]
+            aliased = [(f"b{i}", b) for i, b in enumerate([*computed, *got.blocks])]
             session = AnswerSession({a: _evidence_block(b) for a, b in aliased}, s.quote_fuzzy_min)
             meta_sent = True
             yield _ev(
@@ -275,7 +283,7 @@ async def answer_stream(
                 route=got.route,
                 model=model or llm.model_id,
                 thinking=thinking,
-                blocks=len(got.blocks),
+                blocks=len(aliased),
             )
             prompt = build_prompt(question, aliased, history)
             for attempt in range(2):

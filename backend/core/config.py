@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     max_text_chars: int = 2_000_000  # TXT/MD: roughly 500 pages of prose
     parse_timeout_s: int = 120
     parse_memory_mb: int = 1024
+    query_timeout_s: int = 30  # one table query plan (CSV), run in the parsing sandbox
     worker_concurrency: int = 2
 
     llm_provider: str = "gemini"  # default picker tab: gemini | groq; "fake" forces the offline model
